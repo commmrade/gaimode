@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.100"
+libc = "0.2.178"
+nix = { version = "0.30.1", features = ["process", "fs", "signal"] }
+tokio = { version = "1.48.0", features = ["full"] }

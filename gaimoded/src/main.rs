@@ -1,77 +1,121 @@
-use std::time::Duration;
-
 use nix::{sys::wait::waitpid, unistd};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    net::TcpListener,
+    process::exit,
+    time::Duration,
+};
+use tokio::{
+    io::AsyncReadExt,
+    sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender},
+};
+mod gaiproto;
+mod signals;
+mod utils;
 
-fn print_info(name: &str) {
-    println!(
-        "{} id: {}, gid: {}, sid: {}",
-        name,
-        unistd::getpid(),
-        unistd::getpgid(None).unwrap(),
-        unistd::getsid(None).unwrap(),
-    );
-}
+use crate::gaiproto::Gaiproto;
 
-extern "C" fn handle_sig(sig: std::ffi::c_int, act: *const libc::siginfo_t, p: *mut libc::c_void) {}
+async fn pid_worker(mut rx: UnboundedReceiver<utils::Commands>) {
+    let mut processes: HashSet<nix::unistd::Pid> = HashSet::new();
 
-fn setup_signals() {
-    unsafe {
-        let mut act: libc::sigaction = std::mem::zeroed();
-        act.sa_sigaction = handle_sig as usize;
-        // act.sa_flags = libc::SA_RESTART; // restart a syscall if it was interrupted by a signal (like waitpid)
-        act.sa_sigaction = libc::SIG_IGN; // Ignore siginфt
+    // TODO: Make a struct for storing old state
+    let mut old_cpu_gov = String::new();
+    let mut old_niceness = 0;
+    let mut is_optimized = false;
 
-        /*
-        * A child created via fork(2) inherits a copy of its parent's signal
-               dispositions.  During an execve(2), the dispositions of handled
-               signals are reset to the default; the dispositions of ignored
-               signals are left unchanged
-        */
-
-        libc::sigaction(
-            libc::SIGINT,
-            &act as *const libc::sigaction,
-            std::ptr::null_mut(),
-        );
-    }
-
-    // todo!("Find a library to handle this shit (do i need to handle signals");
-}
-
-fn main() {
-    println!("Start");
-
-    match unsafe { unistd::fork() } {
-        Ok(unistd::ForkResult::Parent { child }) => {
-            print_info("parent");
-
-            if let Err(why) = waitpid(child, None) {
-                eprintln!("Failed to waitpid: {}", why);
-            }
-        }
-        Ok(unistd::ForkResult::Child) => {
-            if let Err(why) = unistd::setsid() {
-                eprintln!("setsid failed: {}", why);
-            }
-
-            print_info("Child after SID");
-
-            match unsafe { unistd::fork() } {
-                Ok(unistd::ForkResult::Child) => {
-                    print_info("Child daemon");
-
-                    loop {
-                        std::thread::sleep(Duration::from_secs(1));
-                    }
+    loop {
+        if let Ok(command) = rx.try_recv() {
+            match command {
+                utils::Commands::OptimizeProcess(pid) => {
+                    println!("Optimizing process {}", pid.as_raw());
+                    processes.insert(pid);
+                    is_optimized = true;
                 }
-                Ok(unistd::ForkResult::Parent { .. }) => {}
-                Err(why) => {
-                    eprintln!("Fork failed: {}", why);
+                _ => {
+                    todo!("Handle command");
                 }
             }
         }
-        Err(why) => {
-            eprintln!("Fork failed: {}", why);
+
+        processes.retain(|pid| {
+            let res = unsafe { nix::libc::kill(pid.as_raw(), 0) };
+            if res < 0 && res != nix::libc::EPERM {
+                return false;
+            }
+            return true;
+        });
+        if is_optimized && processes.is_empty() {
+            // TODO: Revert optimizations
+            println!("Reversed");
+
+            is_optimized = false;
+        }
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
+}
+
+async fn uds_worker(listener: tokio::net::UnixListener, tx: UnboundedSender<utils::Commands>) {
+    loop {
+        match listener.accept().await {
+            Ok((mut stream, _addr)) => {
+                let mut buf: [u8; 2048] = [0u8; 2048];
+                stream.read(&mut buf).await.unwrap();
+
+                let packet = Gaiproto::from_bytes(buf.to_vec());
+                if let Err(why) = handle_packet(&packet, tx.clone()).await {
+                    eprintln!("Handle packet failed: {}", why);
+                }
+            }
+            Err(why) => {
+                eprintln!("Accept failed: {}", why);
+            }
         }
     }
+}
+
+#[tokio::main]
+async fn main() {
+    // if let Err(why) = daemonize() {
+    //     eprintln!("Daemonize failed: {}", why);
+    //     return;
+    // }
+
+    let mut path = std::env::temp_dir();
+    path.push(utils::UDS_FILENAME);
+    if path.exists() {
+        std::fs::remove_file(&path).unwrap();
+    }
+    println!("{:?}", path);
+
+    let listener = tokio::net::UnixListener::bind(&path).expect("UDS creation failed");
+
+    // TODO:
+    // So, this worker should periodically check list of PIDs and see if they are all alive and well
+    // If not, we should restore settings
+    // Also, this worker should maybe use 'channel'
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
+
+    // tokio::spawn(async move {});
+    tokio::spawn(async move {
+        pid_worker(rx).await;
+    });
+
+    uds_worker(listener, tx).await;
+    nix::unistd::unlink(&path).unwrap();
+}
+
+async fn handle_packet(pkt: &Gaiproto, tx: UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
+    match pkt.kind {
+        gaiproto::K_OPTIMIZE_PROCESS => {
+            let pid_raw = i32::from_be_bytes(pkt.payload.clone().try_into().unwrap());
+            let pid = nix::unistd::Pid::from_raw(pid_raw);
+            tx.send(utils::Commands::OptimizeProcess(pid)).unwrap();
+        }
+        _ => {
+            unimplemented!("Handle");
+        }
+    }
+    Ok(())
 }
