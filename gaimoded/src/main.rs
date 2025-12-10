@@ -3,11 +3,8 @@ use tokio::{
     io::AsyncReadExt,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
-mod gaiproto;
 mod signals;
 mod utils;
-
-use crate::gaiproto::Gaiproto;
 
 #[allow(dead_code)]
 struct State {
@@ -111,7 +108,7 @@ async fn uds_worker(listener: tokio::net::UnixListener, tx: UnboundedSender<util
                 let mut buf: [u8; 2048] = [0u8; 2048];
                 stream.read(&mut buf).await.unwrap();
 
-                let packet = Gaiproto::from_bytes(buf.to_vec());
+                let packet = gaiproto::Gaiproto::from_bytes(buf.to_vec());
                 if let Err(why) = handle_packet(&packet, tx.clone()).await {
                     eprintln!("Handle packet failed: {}", why);
                 }
@@ -123,7 +120,10 @@ async fn uds_worker(listener: tokio::net::UnixListener, tx: UnboundedSender<util
     }
 }
 
-async fn handle_packet(pkt: &Gaiproto, tx: UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
+async fn handle_packet(
+    pkt: &gaiproto::Gaiproto,
+    tx: UnboundedSender<utils::Commands>,
+) -> anyhow::Result<()> {
     match pkt.kind {
         gaiproto::K_OPTIMIZE_PROCESS => {
             let pid_raw = i32::from_be_bytes(pkt.payload.clone().try_into().unwrap());

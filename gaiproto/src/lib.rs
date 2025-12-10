@@ -1,8 +1,8 @@
 #[derive(Debug)]
 pub struct Gaiproto {
-    size: u32,
-    kind: u16,
-    payload: Vec<u8>,
+    pub size: u32,
+    pub kind: u16,
+    pub payload: Vec<u8>,
 }
 
 pub const MIN_PACKET_SIZE: usize = 6;

@@ -6,10 +6,8 @@ use std::{
     time::Duration,
 };
 
+use gaiproto::Gaiproto;
 use nix::{sys::wait::waitpid, unistd};
-
-use crate::gaiproto::{Gaiproto, MIN_PACKET_SIZE};
-mod gaiproto;
 mod uds;
 
 fn test_main() {
@@ -20,7 +18,7 @@ fn test_main() {
         input = input.trim().to_owned();
 
         let packet = Gaiproto::new(
-            (MIN_PACKET_SIZE + input.len()) as u32,
+            (gaiproto::MIN_PACKET_SIZE + input.len()) as u32,
             gaiproto::K_RESET_ALL,
             input.into_bytes(),
         );
