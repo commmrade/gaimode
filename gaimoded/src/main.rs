@@ -75,6 +75,7 @@ impl Optimizer {
         self.processes.retain(|pid, _| {
             let res = unsafe { nix::libc::kill(pid.as_raw(), 0) };
             if res < 0 && res != nix::libc::EPERM {
+                // if it returns < 0 -> process does not exist, EPERM means process exist, but not enough perms to kill
                 has_removed = true;
                 return false;
             }
@@ -167,5 +168,5 @@ async fn main() {
     });
     uds_worker(listener, tx).await;
 
-    nix::unistd::unlink(&path).unwrap();
+    nix::unistd::unlink(&path).unwrap(); // TODO: move somewhere else, it should be done on exit
 }
