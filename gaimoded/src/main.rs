@@ -23,7 +23,7 @@ async fn pid_worker(mut rx: UnboundedReceiver<utils::Commands>) {
     let mut old_cpu_gov = String::new();
     let mut old_niceness = 0;
     let mut is_optimized = false;
-
+    let mut should_reset_all = false;
     loop {
         if let Ok(command) = rx.try_recv() {
             match command {
@@ -31,6 +31,13 @@ async fn pid_worker(mut rx: UnboundedReceiver<utils::Commands>) {
                     println!("Optimizing process {}", pid.as_raw());
                     processes.insert(pid);
                     is_optimized = true;
+                }
+                utils::Commands::ResetProcess(pid) => {
+                    println!("Resetting process {}", pid.as_raw());
+                    processes.remove(&pid);
+                }
+                utils::Commands::ResetAll => {
+                    should_reset_all = true;
                 }
                 _ => {
                     todo!("Handle command");
@@ -47,7 +54,12 @@ async fn pid_worker(mut rx: UnboundedReceiver<utils::Commands>) {
         });
         if is_optimized && processes.is_empty() {
             // TODO: Revert optimizations
-            println!("Reversed");
+            if processes.is_empty() {
+                // TODO: In this case all processes are done, so we should jsut reset governor and all those non-pid-bound optimizations
+            } else if should_reset_all {
+                // TODO: Reset optimizations on all processes + reset non-pid-bound optimizations
+                should_reset_all = false;
+            }
 
             is_optimized = false;
         }
@@ -91,18 +103,14 @@ async fn main() {
 
     let listener = tokio::net::UnixListener::bind(&path).expect("UDS creation failed");
 
-    // TODO:
-    // So, this worker should periodically check list of PIDs and see if they are all alive and well
-    // If not, we should restore settings
-    // Also, this worker should maybe use 'channel'
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
 
     // tokio::spawn(async move {});
     tokio::spawn(async move {
         pid_worker(rx).await;
     });
-
     uds_worker(listener, tx).await;
+
     nix::unistd::unlink(&path).unwrap();
 }
 
@@ -113,8 +121,16 @@ async fn handle_packet(pkt: &Gaiproto, tx: UnboundedSender<utils::Commands>) -> 
             let pid = nix::unistd::Pid::from_raw(pid_raw);
             tx.send(utils::Commands::OptimizeProcess(pid)).unwrap();
         }
+        gaiproto::K_RESET_PROCESS => {
+            let pid_raw = i32::from_be_bytes(pkt.payload.clone().try_into().unwrap());
+            let pid = nix::unistd::Pid::from_raw(pid_raw);
+            tx.send(utils::Commands::ResetProcess(pid)).unwrap();
+        }
+        gaiproto::K_RESET_ALL => {
+            tx.send(utils::Commands::ResetAll).unwrap();
+        }
         _ => {
-            unimplemented!("Handle");
+            // Ignore
         }
     }
     Ok(())
