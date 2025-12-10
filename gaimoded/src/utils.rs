@@ -10,6 +10,7 @@ pub enum Commands {
     ResetAll,
 }
 
+#[allow(dead_code)]
 pub fn daemonize() -> anyhow::Result<()> {
     match unsafe { unistd::fork() } {
         Ok(unistd::ForkResult::Parent { child }) => {

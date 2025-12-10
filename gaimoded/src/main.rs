@@ -1,14 +1,7 @@
-use nix::{sys::wait::waitpid, unistd};
-use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
-    net::TcpListener,
-    process::exit,
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 use tokio::{
     io::AsyncReadExt,
-    sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 mod gaiproto;
 mod signals;
@@ -16,55 +9,97 @@ mod utils;
 
 use crate::gaiproto::Gaiproto;
 
-async fn pid_worker(mut rx: UnboundedReceiver<utils::Commands>) {
-    let mut processes: HashSet<nix::unistd::Pid> = HashSet::new();
-
-    // TODO: Make a struct for storing old state
-    let mut old_cpu_gov = String::new();
-    let mut old_niceness = 0;
-    let mut is_optimized = false;
-    let mut should_reset_all = false;
-    loop {
-        if let Ok(command) = rx.try_recv() {
-            match command {
-                utils::Commands::OptimizeProcess(pid) => {
-                    println!("Optimizing process {}", pid.as_raw());
-                    processes.insert(pid);
-                    is_optimized = true;
-                }
-                utils::Commands::ResetProcess(pid) => {
-                    println!("Resetting process {}", pid.as_raw());
-                    processes.remove(&pid);
-                }
-                utils::Commands::ResetAll => {
-                    should_reset_all = true;
-                }
-                _ => {
-                    todo!("Handle command");
-                }
-            }
+#[allow(dead_code)]
+struct State {
+    cpu_gov: String,
+    // TODO: more fields?
+}
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            cpu_gov: String::new(),
         }
+    }
+}
 
-        processes.retain(|pid| {
+#[allow(dead_code)]
+struct ProcessState {
+    niceness: i32,
+    // #[cfg(target_os = "linux")]
+    // ioniceness: i32,
+    // TODO: more fields? and linux specific fields
+}
+impl Default for ProcessState {
+    fn default() -> Self {
+        Self {
+            niceness: 0,
+            // #[cfg(target_os = "linux")]
+            // ioniceness: 0,
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct Optimizer {
+    old_global_state: Option<State>,
+    processes: HashMap<nix::unistd::Pid, ProcessState>,
+    is_optimized: bool,
+}
+
+impl Optimizer {
+    pub fn new() -> Self {
+        Self {
+            old_global_state: None,
+            processes: HashMap::new(),
+            is_optimized: false,
+        }
+    }
+
+    fn optimize_process(&mut self, pid: nix::unistd::Pid) {
+        println!("Optimizing process {}", pid.as_raw());
+        self.processes.insert(pid, ProcessState::default());
+        self.is_optimized = true;
+    }
+    fn reset_process(&mut self, pid: nix::unistd::Pid) {
+        println!("Resetting process {}", pid.as_raw());
+        self.processes.remove(&pid);
+    }
+
+    fn reset(&mut self) {
+        println!("Reset everything");
+        // todo!("Reset all kinds of optimizations");
+    }
+
+    fn check_pids(&mut self) -> bool {
+        let mut has_removed = false;
+        self.processes.retain(|pid, _| {
             let res = unsafe { nix::libc::kill(pid.as_raw(), 0) };
             if res < 0 && res != nix::libc::EPERM {
+                has_removed = true;
                 return false;
             }
             return true;
         });
-        if is_optimized && processes.is_empty() {
-            // TODO: Revert optimizations
-            if processes.is_empty() {
-                // TODO: In this case all processes are done, so we should jsut reset governor and all those non-pid-bound optimizations
-            } else if should_reset_all {
-                // TODO: Reset optimizations on all processes + reset non-pid-bound optimizations
-                should_reset_all = false;
+        has_removed
+    }
+
+    pub async fn worker(mut self, mut rx: UnboundedReceiver<utils::Commands>) {
+        loop {
+            if let Ok(command) = rx.try_recv() {
+                match command {
+                    utils::Commands::OptimizeProcess(pid) => self.optimize_process(pid),
+                    utils::Commands::ResetProcess(pid) => self.reset_process(pid),
+                    utils::Commands::ResetAll => self.reset(),
+                }
             }
 
-            is_optimized = false;
-        }
+            let processes_died = self.check_pids();
+            if processes_died && self.processes.is_empty() {
+                self.reset();
+            }
 
-        tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
     }
 }
 
@@ -87,33 +122,6 @@ async fn uds_worker(listener: tokio::net::UnixListener, tx: UnboundedSender<util
     }
 }
 
-#[tokio::main]
-async fn main() {
-    // if let Err(why) = daemonize() {
-    //     eprintln!("Daemonize failed: {}", why);
-    //     return;
-    // }
-
-    let mut path = std::env::temp_dir();
-    path.push(utils::UDS_FILENAME);
-    if path.exists() {
-        std::fs::remove_file(&path).unwrap();
-    }
-    println!("{:?}", path);
-
-    let listener = tokio::net::UnixListener::bind(&path).expect("UDS creation failed");
-
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
-
-    // tokio::spawn(async move {});
-    tokio::spawn(async move {
-        pid_worker(rx).await;
-    });
-    uds_worker(listener, tx).await;
-
-    nix::unistd::unlink(&path).unwrap();
-}
-
 async fn handle_packet(pkt: &Gaiproto, tx: UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
     match pkt.kind {
         gaiproto::K_OPTIMIZE_PROCESS => {
@@ -134,4 +142,30 @@ async fn handle_packet(pkt: &Gaiproto, tx: UnboundedSender<utils::Commands>) -> 
         }
     }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    // if let Err(why) = daemonize() {
+    //     eprintln!("Daemonize failed: {}", why);
+    //     return;
+    // }
+
+    let mut path = std::env::temp_dir();
+    path.push(utils::UDS_FILENAME);
+    if path.exists() {
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    let listener = tokio::net::UnixListener::bind(&path).expect("UDS creation failed");
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
+
+    tokio::spawn(async move {
+        let optimizer = Optimizer::new();
+        optimizer.worker(rx).await;
+    });
+    uds_worker(listener, tx).await;
+
+    nix::unistd::unlink(&path).unwrap();
 }

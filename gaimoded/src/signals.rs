@@ -1,5 +1,6 @@
 use nix::unistd;
 
+#[allow(dead_code)]
 fn print_info(name: &str) {
     println!(
         "{} id: {}, gid: {}, sid: {}",
@@ -10,9 +11,11 @@ fn print_info(name: &str) {
     );
 }
 
+#[allow(dead_code)]
 extern "C" fn handle_sig(sig: std::ffi::c_int, act: *const libc::siginfo_t, p: *mut libc::c_void) {}
 
 // TODO: Somehow I should revert settings if i catch a TERM signal
+#[allow(dead_code)]
 fn setup_signals() {
     unsafe {
         let mut act: libc::sigaction = std::mem::zeroed();

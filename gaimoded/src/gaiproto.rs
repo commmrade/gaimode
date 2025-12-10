@@ -5,12 +5,14 @@ pub struct Gaiproto {
     pub payload: Vec<u8>,
 }
 
+#[allow(dead_code)]
 pub const MIN_PACKET_SIZE: usize = 6;
 
 pub const K_OPTIMIZE_PROCESS: u16 = 0x2;
 pub const K_RESET_PROCESS: u16 = 0x4;
 pub const K_RESET_ALL: u16 = 0x6;
 
+#[allow(dead_code)]
 impl Gaiproto {
     pub fn new(size: u32, kind: u16, payload: Vec<u8>) -> Gaiproto {
         Gaiproto {
