@@ -46,6 +46,7 @@ impl Default for ProcessState {
 }
 
 #[allow(dead_code)]
+// TODO: Probably should make it a singleton or something, so that I can access it in signal handler | panic handler
 struct Optimizer {
     old_pol_state: Option<Vec<State>>, // p
     processes: HashMap<nix::unistd::Pid, ProcessState>,
@@ -61,7 +62,7 @@ impl Optimizer {
         }
     }
 
-    fn optimize_cpu_gov(&mut self) -> anyhow::Result<()> {
+    fn optimize_cpu(&mut self) -> anyhow::Result<()> {
         let govs = cpu::get_govs()?;
 
         let mut new_old_global_state = Vec::new();
@@ -82,7 +83,7 @@ impl Optimizer {
         cpu::set_gov_all(cpu::PERF_GOV)?;
         Ok(())
     }
-    fn reset_cpu_gov(&mut self) -> anyhow::Result<()> {
+    fn reset_cpu(&mut self) -> anyhow::Result<()> {
         if let Some(old_state) = self.old_pol_state.as_ref() {
             for state in old_state {
                 cpu::set_gov(&state.path, &state.governor)?; // TODO: handle
@@ -118,7 +119,7 @@ impl Optimizer {
     fn reset(&mut self) {
         println!("Reset optimizations");
         if self.is_optimized {
-            self.reset_cpu_gov().unwrap();
+            self.reset_cpu().unwrap();
             self.reset_processes().unwrap();
         }
         // todo!("Reset all kinds of optimizations");
@@ -144,7 +145,7 @@ impl Optimizer {
                 match command {
                     utils::Commands::OptimizeProcess(pid) => {
                         if !self.is_optimized {
-                            if let Err(_) = self.optimize_cpu_gov() {
+                            if let Err(_) = self.optimize_cpu() {
                                 eprintln!(
                                     "Your CPUFreq Policies do not support 'Performance' governor"
                                 )
