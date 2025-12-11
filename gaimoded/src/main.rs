@@ -6,38 +6,6 @@ mod optimizer;
 mod signals;
 mod utils;
 
-#[allow(dead_code)]
-struct State {
-    path: PathBuf,
-    governor: String,
-    // TODO: more fields?
-}
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            path: PathBuf::new(),
-            governor: String::new(),
-        }
-    }
-}
-
-#[allow(dead_code)]
-struct ProcessState {
-    niceness: i32,
-    // #[cfg(target_os = "linux")]
-    // ioniceness: i32,
-    // TODO: more fields? and linux specific fields
-}
-impl Default for ProcessState {
-    fn default() -> Self {
-        Self {
-            niceness: 0,
-            // #[cfg(target_os = "linux")]
-            // ioniceness: 0,
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() {
     // if let Err(why) = daemonize() {

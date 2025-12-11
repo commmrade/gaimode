@@ -1,8 +1,40 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::{ProcessState, State, cpu, utils};
+use crate::{cpu, utils};
+
+#[allow(dead_code)]
+struct State {
+    path: PathBuf,
+    governor: String,
+    // TODO: more fields?
+}
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::new(),
+            governor: String::new(),
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct ProcessState {
+    niceness: i32,
+    // #[cfg(target_os = "linux")]
+    ioniceness: i32,
+    // TODO: more fields? and linux specific fields
+}
+impl Default for ProcessState {
+    fn default() -> Self {
+        Self {
+            niceness: 0,
+            // #[cfg(target_os = "linux")]
+            ioniceness: 0,
+        }
+    }
+}
 
 #[allow(dead_code)]
 // TODO: Probably should make it a singleton or something, so that I can access it in signal handler | panic handler
@@ -50,7 +82,6 @@ impl Optimizer {
             }
         }
 
-        // TODO: Iterate processes and reset niceness
         self.is_optimized = false;
         Ok(())
     }
@@ -71,7 +102,7 @@ impl Optimizer {
     fn reset_processes(&mut self) -> anyhow::Result<()> {
         // todo: reset
         for (process, state) in self.processes.drain() {
-            // Clear
+            // Clear niceness, ioniceness and yada yada
         }
         Ok(())
     }
