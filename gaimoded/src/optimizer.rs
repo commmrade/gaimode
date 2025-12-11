@@ -22,6 +22,12 @@ impl Optimizer {
     }
 
     fn optimize_cpu(&mut self) -> anyhow::Result<()> {
+        if !cpu::is_gov_available(cpu::PERF_GOV)? {
+            return Err(anyhow::anyhow!(
+                "Your policies do not support 'Performance' governor"
+            ));
+        }
+
         let govs = cpu::get_govs()?;
 
         let mut new_old_global_state = Vec::new();
@@ -34,11 +40,6 @@ impl Optimizer {
         }
         self.old_sys_state = Some(new_old_global_state);
 
-        if !cpu::is_gov_available(cpu::PERF_GOV)? {
-            return Err(anyhow::anyhow!(
-                "Your policies do not support 'Performance' governor"
-            ));
-        }
         cpu::set_gov_all(cpu::PERF_GOV)?;
         Ok(())
     }
