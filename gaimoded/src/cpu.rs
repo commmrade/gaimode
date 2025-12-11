@@ -15,11 +15,21 @@ pub fn is_gov_available(gov: &str) -> anyhow::Result<bool> {
     // NOTE: 1. cpu*/cpufreq is symlink to ../cpufreq/policy*
     // 2. What if cpu0 has performance and cpu1 does not? So perhaps it's worth it to iterate all cpus and check their available governors
     // // TODO: Check all policies (probably)
-    let mut file =
-        std::fs::File::open("/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors")?;
-    let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
-    Ok(buf.contains(gov))
+    // let mut file =
+    // std::fs::File::open("/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors")?;
+    // let mut buf = String::new();
+    // file.read_to_string(&mut buf)?;
+
+    for entry in glob::glob(SCALING_GOV_POLICY_PATH)? {
+        let mut file = std::fs::File::open(entry?)?;
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)?;
+
+        if buf.contains(gov) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub fn set_gov_all(gov: &str) -> anyhow::Result<()> {

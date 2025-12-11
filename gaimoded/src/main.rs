@@ -116,6 +116,7 @@ impl Optimizer {
     }
 
     fn reset(&mut self) {
+        println!("Reset optimizations");
         if self.is_optimized {
             self.reset_cpu_gov().unwrap();
             self.reset_processes().unwrap();
@@ -143,7 +144,7 @@ impl Optimizer {
                 match command {
                     utils::Commands::OptimizeProcess(pid) => {
                         if !self.is_optimized {
-                            if let Err(why) = self.optimize_cpu_gov() {
+                            if let Err(_) = self.optimize_cpu_gov() {
                                 eprintln!(
                                     "Your CPUFreq Policies do not support 'Performance' governor"
                                 )

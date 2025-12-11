@@ -53,9 +53,9 @@ fn main() {
             let bytes = packet.convert_to_bytes();
             stream.write_all(&bytes).unwrap();
 
-            // if let Err(why) = waitpid(child, None) {
-            //     eprintln!("Failed to wait for child: {}", why);
-            // }
+            if let Err(why) = waitpid(child, None) {
+                eprintln!("Failed to wait for child: {}", why);
+            }
         }
         Ok(unistd::ForkResult::Child) => {
             let mut bin_name = bin_name.into_bytes();
