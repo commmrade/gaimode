@@ -60,19 +60,68 @@ pub fn process_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
         let ret = libc::getpriority(libc::PRIO_PROCESS, pid.as_raw() as u32);
 
         // If returned -1 and errno is. Not sure if it's thread safe, but no other thread seem to be messing with errno
-        if ret == -1 && *libc::__errno_location() > 0 {
-            eprintln!("Could not get process niceness");
+        if ret == -1 && *libc::__errno_location() != 0 {
+            return Err(anyhow::anyhow!("Could not get process niceness"));
         }
         Ok(ret)
     }
 }
 
+// Optimizes scheduling of a process
 pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Result<()> {
     unsafe {
-        let ret = libc::setpriority(libc::PRIO_PROCESS, pid.as_raw() as u32, niceness);
-        if ret < 0 {
-            return Err(anyhow::anyhow!("Failed to change process niceness"));
+        // Task contains process itself
+        let tasks_path = format!("/proc/{}/task/", pid.as_raw());
+        let dir_iter = std::fs::read_dir(&tasks_path)?;
+        for task in dir_iter {
+            let task_tid = task?.file_name().to_string_lossy().parse::<u32>()?;
+
+            let ret = libc::setpriority(libc::PRIO_PROCESS, task_tid, niceness);
+            if ret < 0 {
+                return Err(anyhow::anyhow!("Failed to change process niceness"));
+            }
         }
+        Ok(())
+    }
+}
+
+pub const IOPRIO_WHO_PROCESS: i32 = 1;
+pub const OPTIMIZED_IO_NICE_VALUE: i32 = 1; // Goes from 0 to 7 for Best-effort class
+
+pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
+    unsafe {
+        *libc::__errno_location() = 0;
+        let ret = libc::syscall(libc::SYS_ioprio_get, IOPRIO_WHO_PROCESS, pid.as_raw());
+        if ret == -1 && *libc::__errno_location() != 0 {
+            return Err(anyhow::anyhow!("Failed to get process IO niceness"));
+        }
+
+        todo!("Extract data from IOPRIO value (ret)");
+        Ok(ret as i32)
+    }
+}
+
+// Optimizes IO performance when game has to load assets
+pub fn set_process_io_niceness(pid: nix::unistd::Pid, ioniceness: i32) -> anyhow::Result<()> {
+    unsafe {
+        todo!("IOPRIO argument takes bitmask of class + ioniceness");
+
+        let tasks_path = format!("/proc/{}/task/", pid.as_raw());
+        let dir_iter = std::fs::read_dir(&tasks_path)?;
+        for task in dir_iter {
+            let task_tid = task?.file_name().to_string_lossy().parse::<u32>()?;
+
+            let ret = libc::syscall(
+                libc::SYS_ioprio_set,
+                IOPRIO_WHO_PROCESS,
+                task_tid,
+                ioniceness,
+            );
+            if ret < 0 {
+                return Err(anyhow::anyhow!("Failed to change process IO niceness"));
+            }
+        }
+
         Ok(())
     }
 }

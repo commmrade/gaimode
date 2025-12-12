@@ -30,16 +30,22 @@ async fn main() {
     let mut listener = listener::UdsListener::new(listener);
 
     // This looks better than looping in process since now i can make optimizer and listener a static var and lock a mutex when using them
-    tokio::spawn(async move {
+    let optimizer_handle = tokio::spawn(async move {
         loop {
             optimizer.process(&mut rx).await;
         }
     });
-    tokio::spawn(async move {
+    let listener_handle = tokio::spawn(async move {
         loop {
             listener.process(&tx).await;
         }
     });
+
+    // Waits for one of the handlers to finish, if 1 finished, the other one should as well
+    tokio::select! {
+        _ = optimizer_handle => {}
+        _ = listener_handle => {}
+    }
 
     nix::unistd::unlink(&path).unwrap(); // TODO: Should be done on exit
 }

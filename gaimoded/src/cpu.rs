@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub const SCALING_AV_GOV_POLICY_PATH_BLOB: &'static str =
+    "/sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors";
 pub const SCALING_GOV_POLICY_PATH_GLOB: &'static str =
     "/sys/devices/system/cpu/cpufreq/policy*/scaling_governor";
 pub const PERF_GOV: &'static str = "performance";
@@ -13,7 +15,7 @@ pub const POWERSAVE_GOV: &'static str = "powersave";
 
 pub fn is_gov_available(gov: &str) -> anyhow::Result<bool> {
     // NOTE: 1. cpu*/cpufreq is symlink to ../cpufreq/policy*
-    for entry in glob::glob(SCALING_GOV_POLICY_PATH_GLOB)? {
+    for entry in glob::glob(SCALING_AV_GOV_POLICY_PATH_BLOB)? {
         let mut file = std::fs::File::open(entry?)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
