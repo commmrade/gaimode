@@ -22,15 +22,13 @@ impl Default for State {
 #[allow(dead_code)]
 struct ProcessState {
     niceness: i32,
-    // #[cfg(target_os = "linux")]
     ioniceness: i32,
-    // TODO: more fields? and linux specific fields
+    // TODO: more fields?
 }
 impl Default for ProcessState {
     fn default() -> Self {
         Self {
             niceness: 0,
-            // #[cfg(target_os = "linux")]
             ioniceness: 0,
         }
     }
@@ -89,20 +87,28 @@ impl Optimizer {
     fn optimize_process(&mut self, pid: nix::unistd::Pid) {
         println!("Optimizing process {}", pid.as_raw());
         // TODO: get process state
-        self.processes.insert(pid, ProcessState::default());
+        let old_niceness: i32 = utils::process_niceness(pid).unwrap();
 
-        // TODO: optimize
+        let mut pstate = ProcessState::default();
+        pstate.niceness = old_niceness;
+
+        self.processes.insert(pid, pstate);
+
+        utils::set_process_niceness(pid, utils::OPTIMIZED_NICE_VALUE).unwrap();
     }
     fn reset_process(&mut self, pid: nix::unistd::Pid) {
         println!("Resetting process {}", pid.as_raw());
-        self.processes.remove(&pid);
+        let state = self.processes.remove(&pid).unwrap(); // Safety: Process should exist
 
-        // Reset process settings
+        utils::set_process_niceness(pid, state.niceness).unwrap(); // TODO: Handle
+        // ...
     }
     fn reset_processes(&mut self) -> anyhow::Result<()> {
         // todo: reset
         for (process, state) in self.processes.drain() {
             // Clear niceness, ioniceness and yada yada
+            utils::set_process_niceness(process, state.niceness).unwrap();
+            // ...
         }
         Ok(())
     }
