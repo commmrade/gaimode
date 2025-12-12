@@ -1,6 +1,6 @@
 pub const IOPRIO_WHO_PROCESS: i32 = 1;
 const IOPRIO_CLASS_SHIFT: i32 = 13;
-pub const IOPRIO_PRIO_MASK: i32 = ((1 << IOPRIO_CLASS_SHIFT) - 1);
+pub const IOPRIO_PRIO_MASK: i32 = (1 << IOPRIO_CLASS_SHIFT) - 1;
 pub const IOPRIO_CLASS_BE: i32 = 2;
 pub const OPTIMIZED_IO_NICE_VALUE: i32 = 1;
 
@@ -22,7 +22,6 @@ pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
             return Err(anyhow::anyhow!("Failed to get process IO niceness"));
         }
 
-        // todo!("Extract data from IOPRIO value (ret)");
         Ok(ioprio_prio_data(ret as i32))
     }
 }
@@ -30,8 +29,6 @@ pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
 // Optimizes IO performance when game has to load assets
 pub fn set_process_io_niceness(pid: nix::unistd::Pid, ioniceness: i32) -> anyhow::Result<()> {
     unsafe {
-        // todo!("IOPRIO argument takes bitmask of class + ioniceness");
-
         let tasks_path = format!("/proc/{}/task/", pid.as_raw());
         let dir_iter = std::fs::read_dir(&tasks_path)?;
         for task in dir_iter {

@@ -1,6 +1,5 @@
 pub const OPTIMIZED_NICE_VALUE: i32 = -10;
 
-// TOOD: Move to scheduling i think since it changes scheduling of a process
 pub fn process_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
     unsafe {
         /*
@@ -26,6 +25,7 @@ pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Res
         // Task contains process itself
         let tasks_path = format!("/proc/{}/task/", pid.as_raw());
         let dir_iter = std::fs::read_dir(&tasks_path)?;
+
         for task in dir_iter {
             let task_tid = task?.file_name().to_string_lossy().parse::<u32>()?;
 

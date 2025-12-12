@@ -1,8 +1,5 @@
-use std::process::exit;
-
 use nix::{sys::wait::waitpid, unistd};
-
-use crate::cpu;
+use std::process::exit;
 
 pub const UDS_FILENAME: &'static str = "gaimoded_sock";
 
@@ -43,4 +40,10 @@ pub fn daemonize() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+pub fn tasks_in_process(pid: nix::unistd::Pid) -> anyhow::Result<u32> {
+    let path = format!("/proc/{}/task", pid.as_raw());
+    let dir = std::fs::read_dir(path)?;
+    Ok(dir.count() as u32)
 }

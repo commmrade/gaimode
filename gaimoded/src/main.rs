@@ -1,4 +1,4 @@
-use std::{os::unix::fs::PermissionsExt, path::PathBuf};
+use std::os::unix::fs::PermissionsExt;
 
 mod cpu;
 mod io;

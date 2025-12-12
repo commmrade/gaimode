@@ -12,6 +12,7 @@ fn print_info(name: &str) {
 }
 
 #[allow(dead_code)]
+#[allow(unused)]
 extern "C" fn handle_sig(sig: std::ffi::c_int, act: *const libc::siginfo_t, p: *mut libc::c_void) {}
 
 // TODO: Somehow I should revert settings if i catch a TERM signal
