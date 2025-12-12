@@ -132,10 +132,33 @@ pub fn cpus_load() -> anyhow::Result<Vec<(usize, f32)>> {
     Ok(res)
 }
 
-pub fn pin_process(pid: nix::unistd::Pid, cpu: u32) -> anyhow::Result<()> {
+pub fn pin_process(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
     unsafe {
         let mut set: libc::cpu_set_t = std::mem::zeroed();
-        libc::CPU_SET(cpu as usize, &mut set);
+        libc::CPU_SET(cpu, &mut set);
+        let ret = libc::sched_setaffinity(
+            pid.as_raw(),
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &set as *const _,
+        );
+        if ret < 0 {
+            return Err(anyhow::anyhow!("Could not change process affinity"));
+        }
+    }
+    Ok(())
+}
+
+pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+
+        let cpus_n = cpus_num()?;
+        for i in 0..cpus_n {
+            libc::CPU_SET(i as usize, &mut set);
+        }
+        libc::CPU_CLR(cpu, &mut set);
+
+        // libc::CPU_SET(cpu, &mut set);
         let ret = libc::sched_setaffinity(
             pid.as_raw(),
             std::mem::size_of::<libc::cpu_set_t>(),

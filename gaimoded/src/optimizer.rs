@@ -99,8 +99,31 @@ impl Optimizer {
 
         self.processes.insert(pid, pstate);
 
+        // nicenessness
         scheduler::set_process_niceness(pid, scheduler::OPTIMIZED_NICE_VALUE).unwrap();
         io::set_process_io_niceness(pid, io::OPTIMIZED_IO_NICE_VALUE).unwrap();
+
+        // cpu affinity
+        // Find the lowest loaded cpu
+        let mut cpu_loads = cpu::cpus_load().unwrap();
+        cpu_loads.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let mut cpu_idx = 0;
+        for (idx, _) in cpu_loads.iter() {
+            if *idx != 0 && *idx != 1 {
+                cpu_idx = *idx;
+                break;
+            }
+        }
+
+        // For now I just pin main thread, TODO: but how do i know where to pin all other threads and which
+        cpu::pin_process(pid, cpu_idx).unwrap();
+        // Also I can pin process itself to 1 cpu, and exclude all its tasks from working on this cpu, for example:
+        // -- Test
+        let tasks = &utils::process_tasks(pid).unwrap()[1..]; // 0 task is the process itself (main thread)
+        for task in tasks {
+            cpu::pin_process_excluding(nix::unistd::Pid::from_raw(*task as i32), cpu_idx).unwrap();
+        }
+        // -- Test end
     }
     fn reset_process(&mut self, pid: nix::unistd::Pid) {
         println!("Resetting process {}", pid.as_raw());
