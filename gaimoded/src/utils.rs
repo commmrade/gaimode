@@ -46,6 +46,7 @@ pub fn daemonize() -> anyhow::Result<()> {
 }
 
 pub const OPTIMIZED_NICE_VALUE: i32 = -10;
+pub const OPTIMIZED_IO_NICE_VALUE: i32 = 1;
 
 // TOOD: Move to scheduling i think since it changes scheduling of a process
 pub fn process_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
@@ -78,7 +79,7 @@ pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Res
 
             let ret = libc::setpriority(libc::PRIO_PROCESS, task_tid, niceness);
             if ret < 0 {
-                return Err(anyhow::anyhow!("Failed to change process niceness"));
+                eprintln!("Failed to change TID niceness");
             }
         }
         Ok(())
@@ -86,7 +87,19 @@ pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Res
 }
 
 pub const IOPRIO_WHO_PROCESS: i32 = 1;
-pub const OPTIMIZED_IO_NICE_VALUE: i32 = 1; // Goes from 0 to 7 for Best-effort class
+const IOPRIO_CLASS_SHIFT: i32 = 13;
+pub const IOPRIO_PRIO_MASK: i32 = ((1 << IOPRIO_CLASS_SHIFT) - 1);
+pub const IOPRIO_CLASS_BE: i32 = 2;
+
+#[inline]
+fn ioprio_prio_data(ioprio: i32) -> i32 {
+    (ioprio) & IOPRIO_PRIO_MASK
+}
+
+#[inline]
+fn ioprio_value(prioclass: i32, priolevel: i32) -> u16 {
+    ((prioclass << IOPRIO_CLASS_SHIFT) | priolevel) as u16
+}
 
 pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
     unsafe {
@@ -96,29 +109,31 @@ pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
             return Err(anyhow::anyhow!("Failed to get process IO niceness"));
         }
 
-        todo!("Extract data from IOPRIO value (ret)");
-        Ok(ret as i32)
+        // todo!("Extract data from IOPRIO value (ret)");
+        Ok(ioprio_prio_data(ret as i32))
     }
 }
 
 // Optimizes IO performance when game has to load assets
 pub fn set_process_io_niceness(pid: nix::unistd::Pid, ioniceness: i32) -> anyhow::Result<()> {
     unsafe {
-        todo!("IOPRIO argument takes bitmask of class + ioniceness");
+        // todo!("IOPRIO argument takes bitmask of class + ioniceness");
 
         let tasks_path = format!("/proc/{}/task/", pid.as_raw());
         let dir_iter = std::fs::read_dir(&tasks_path)?;
         for task in dir_iter {
             let task_tid = task?.file_name().to_string_lossy().parse::<u32>()?;
 
+            let value = ioprio_value(IOPRIO_CLASS_BE, ioniceness);
             let ret = libc::syscall(
                 libc::SYS_ioprio_set,
                 IOPRIO_WHO_PROCESS,
                 task_tid,
-                ioniceness,
+                value as i32,
             );
             if ret < 0 {
-                return Err(anyhow::anyhow!("Failed to change process IO niceness"));
+                // Should not fail if failed to change single process' niceness
+                eprintln!("Failed to change TID IO niceness");
             }
         }
 
