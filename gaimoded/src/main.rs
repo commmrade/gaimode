@@ -1,8 +1,10 @@
 use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
 mod cpu;
+mod io;
 mod listener;
 mod optimizer;
+mod scheduler;
 mod signals;
 mod utils;
 

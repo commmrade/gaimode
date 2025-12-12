@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
-    cpu,
+    cpu, io, scheduler,
     utils::{self},
 };
 
@@ -90,8 +90,8 @@ impl Optimizer {
     fn optimize_process(&mut self, pid: nix::unistd::Pid) {
         println!("Optimizing process {}", pid.as_raw());
         // TODO: get process state
-        let old_niceness: i32 = utils::process_niceness(pid).unwrap();
-        let old_ioniceness: i32 = utils::process_io_niceness(pid).unwrap();
+        let old_niceness: i32 = scheduler::process_niceness(pid).unwrap();
+        let old_ioniceness: i32 = io::process_io_niceness(pid).unwrap();
 
         let mut pstate = ProcessState::default();
         pstate.niceness = old_niceness;
@@ -99,15 +99,15 @@ impl Optimizer {
 
         self.processes.insert(pid, pstate);
 
-        utils::set_process_niceness(pid, utils::OPTIMIZED_NICE_VALUE).unwrap();
-        utils::set_process_io_niceness(pid, utils::OPTIMIZED_IO_NICE_VALUE).unwrap();
+        scheduler::set_process_niceness(pid, scheduler::OPTIMIZED_NICE_VALUE).unwrap();
+        io::set_process_io_niceness(pid, io::OPTIMIZED_IO_NICE_VALUE).unwrap();
     }
     fn reset_process(&mut self, pid: nix::unistd::Pid) {
         println!("Resetting process {}", pid.as_raw());
         let state = self.processes.remove(&pid).unwrap(); // Safety: Process should exist
 
-        utils::set_process_niceness(pid, state.niceness).unwrap(); // TODO: Handle
-        utils::set_process_io_niceness(pid, state.ioniceness).unwrap();
+        scheduler::set_process_niceness(pid, state.niceness).unwrap(); // TODO: Handle
+        io::set_process_io_niceness(pid, state.ioniceness).unwrap();
         // ...
     }
     fn reset_processes(&mut self) -> anyhow::Result<()> {
@@ -115,8 +115,8 @@ impl Optimizer {
         for (process, state) in self.processes.drain() {
             // Clear niceness, ioniceness and yada yada
             // TODO: Factor out, a lot of duplication of code
-            utils::set_process_niceness(process, state.niceness).unwrap();
-            utils::set_process_io_niceness(process, state.ioniceness).unwrap();
+            scheduler::set_process_niceness(process, state.niceness).unwrap();
+            io::set_process_io_niceness(process, state.ioniceness).unwrap();
             // ...
         }
         Ok(())
