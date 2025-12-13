@@ -1,4 +1,4 @@
-use std::os::unix::fs::PermissionsExt;
+use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 mod cpu;
 mod io;
@@ -34,12 +34,17 @@ async fn main() {
     // This looks better than looping in process since now i can make optimizer and listener a static var and lock a mutex when using them
     let optimizer_handle = tokio::spawn(async move {
         loop {
-            optimizer.process(&mut rx).await;
+            if let Err(why) = optimizer.process(&mut rx).await {
+                eprintln!("Optimization processing failed: {}", why);
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     });
     let listener_handle = tokio::spawn(async move {
         loop {
-            listener.process(&tx).await;
+            if let Err(why) = listener.process(&tx).await {
+                eprintln!("Listener processing failed: {}", why);
+            }
         }
     });
 

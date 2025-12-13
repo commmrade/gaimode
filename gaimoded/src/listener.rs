@@ -10,21 +10,20 @@ impl UdsListener {
     pub fn new(listener: tokio::net::UnixListener) -> UdsListener {
         UdsListener { listener }
     }
-    pub async fn process(&mut self, tx: &UnboundedSender<utils::Commands>) {
+    pub async fn process(&mut self, tx: &UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
         match self.listener.accept().await {
             Ok((mut stream, _addr)) => {
                 let mut buf: [u8; 2048] = [0u8; 2048];
-                stream.read(&mut buf).await.unwrap();
+                stream.read(&mut buf).await?;
 
                 let packet = gaiproto::Gaiproto::from_bytes(buf.to_vec());
-                if let Err(why) = handle_packet(&packet, tx.clone()).await {
-                    eprintln!("Handle packet failed: {}", why);
-                }
+                handle_packet(&packet, tx.clone()).await?;
             }
             Err(why) => {
-                eprintln!("Accept failed: {}", why);
+                return Err(anyhow::anyhow!("Accept failed: {}", why));
             }
         }
+        Ok(())
     }
 }
 

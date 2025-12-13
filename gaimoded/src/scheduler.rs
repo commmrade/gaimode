@@ -1,4 +1,5 @@
 pub const OPTIMIZED_NICE_VALUE: i32 = -10;
+pub const DEFAULT_NICE_VALUE: i32 = 0;
 
 pub fn process_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
     unsafe {

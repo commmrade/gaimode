@@ -3,6 +3,7 @@ const IOPRIO_CLASS_SHIFT: i32 = 13;
 pub const IOPRIO_PRIO_MASK: i32 = (1 << IOPRIO_CLASS_SHIFT) - 1;
 pub const IOPRIO_CLASS_BE: i32 = 2;
 pub const OPTIMIZED_IO_NICE_VALUE: i32 = 1;
+pub const DEFAULT_IO_NICE_VALUE: i32 = 4;
 
 #[inline]
 fn ioprio_prio_data(ioprio: i32) -> i32 {

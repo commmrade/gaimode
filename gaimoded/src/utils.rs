@@ -48,7 +48,7 @@ pub fn tasks_in_process_n(pid: nix::unistd::Pid) -> anyhow::Result<u32> {
     Ok(dir.count() as u32)
 }
 
-pub fn process_tasks(pid: nix::unistd::Pid) -> anyhow::Result<Vec<u32>> {
+pub fn get_process_tasks(pid: nix::unistd::Pid) -> anyhow::Result<Vec<u32>> {
     let mut res = Vec::new();
     let path = format!("/proc/{}/task", pid.as_raw());
     let dir_iter = std::fs::read_dir(path)?;
