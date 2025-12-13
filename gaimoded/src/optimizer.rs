@@ -25,7 +25,7 @@ impl Default for State {
 struct ProcessState {
     niceness: Option<i32>,
     ioniceness: Option<i32>,
-    aff_mask: libc::cpu_set_t, // Store main thread affinity mask, TODO: Implement
+    aff_mask: Option<libc::cpu_set_t>, // Store main thread affinity mask
 }
 impl Default for ProcessState {
     fn default() -> Self {
@@ -95,7 +95,14 @@ impl Optimizer {
         let mut pstate = ProcessState::default();
         pstate.niceness = Some(old_niceness);
         pstate.ioniceness = Some(old_ioniceness);
-        // TODO: store current affinity mask
+        pstate.aff_mask = Some(cpu::get_aff_mask(pid).unwrap_or_else(|_| unsafe {
+            let mut mask: libc::cpu_set_t = std::mem::zeroed();
+            let cpus_n = cpu::cpus_num().unwrap();
+            for i in 0..cpus_n as usize {
+                libc::CPU_SET(i, &mut mask);
+            }
+            mask
+        }));
 
         self.processes.insert(pid, pstate);
 
@@ -181,7 +188,23 @@ fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<(
         eprintln!("reset io niceness failed: {}", why);
     }
 
-    // TODO: Reset CPU Pinning (AFfinity, parking) (and aff mask)
+    let fed_mask = || unsafe {
+        let mut mask: libc::cpu_set_t = std::mem::zeroed();
+        let cpus_n = cpu::cpus_num().unwrap();
+        for i in 0..cpus_n as usize {
+            libc::CPU_SET(i, &mut mask);
+        }
+        mask
+    };
+    let tasks = &utils::get_process_tasks(pid)?; // 0 task is the process itself (main thread)
+    for task in tasks {
+        if let Err(why) = cpu::set_aff_mask(
+            nix::unistd::Pid::from_raw(*task as i32),
+            state.aff_mask.unwrap_or_else(fed_mask),
+        ) {
+            eprintln!("Could not reset aff mask for {}: {}", task, why);
+        }
+    }
     Ok(())
 }
 

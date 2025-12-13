@@ -132,6 +132,35 @@ pub fn cpus_load() -> anyhow::Result<Vec<(usize, f32)>> {
     Ok(res)
 }
 
+pub fn get_aff_mask(pid: nix::unistd::Pid) -> anyhow::Result<libc::cpu_set_t> {
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+        let ret = libc::sched_getaffinity(
+            pid.as_raw(),
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &mut set as *mut _,
+        );
+        if ret < 0 {
+            return Err(anyhow::anyhow!("Could not get process affinity"));
+        }
+        Ok(set)
+    }
+}
+
+pub fn set_aff_mask(pid: nix::unistd::Pid, mask: libc::cpu_set_t) -> anyhow::Result<()> {
+    unsafe {
+        let ret = libc::sched_setaffinity(
+            pid.as_raw(),
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &mask as *const _,
+        );
+        if ret < 0 {
+            return Err(anyhow::anyhow!("Could not change process affinity"));
+        }
+        Ok(())
+    }
+}
+
 pub fn pin_process(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
     unsafe {
         let mut set: libc::cpu_set_t = std::mem::zeroed();
@@ -144,8 +173,8 @@ pub fn pin_process(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
         if ret < 0 {
             return Err(anyhow::anyhow!("Could not change process affinity"));
         }
+        Ok(())
     }
-    Ok(())
 }
 
 pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu_exclude: usize) -> anyhow::Result<()> {
