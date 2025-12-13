@@ -25,13 +25,14 @@ impl Default for State {
 struct ProcessState {
     niceness: Option<i32>,
     ioniceness: Option<i32>,
-    // TODO: more fields?
+    aff_mask: libc::cpu_set_t, // Store main thread affinity mask, TODO: Implement
 }
 impl Default for ProcessState {
     fn default() -> Self {
         Self {
             niceness: None,
             ioniceness: None,
+            aff_mask: unsafe { std::mem::zeroed() },
         }
     }
 }
@@ -94,6 +95,7 @@ impl Optimizer {
         let mut pstate = ProcessState::default();
         pstate.niceness = Some(old_niceness);
         pstate.ioniceness = Some(old_ioniceness);
+        // TODO: store current affinity mask
 
         self.processes.insert(pid, pstate);
 
@@ -179,7 +181,7 @@ fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<(
         eprintln!("reset io niceness failed: {}", why);
     }
 
-    // TODO: Reset CPU Pinning (AFfinity, parking)
+    // TODO: Reset CPU Pinning (AFfinity, parking) (and aff mask)
     Ok(())
 }
 
