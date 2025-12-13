@@ -11,7 +11,6 @@ use crate::{
 struct State {
     path: PathBuf,
     governor: String,
-    // TODO: more fields?
 }
 impl Default for State {
     fn default() -> Self {
@@ -79,7 +78,7 @@ impl Optimizer {
     fn reset_cpu(&mut self) -> anyhow::Result<()> {
         if let Some(old_state) = self.old_sys_state.as_ref() {
             for state in old_state {
-                cpu::set_gov(&state.path, &state.governor)?; // TODO: handle
+                cpu::set_gov(&state.path, &state.governor)?;
             }
         }
 
@@ -103,7 +102,6 @@ impl Optimizer {
     }
 
     fn reset_processes(&mut self) -> anyhow::Result<()> {
-        // todo: reset
         for (process, state) in self.processes.drain() {
             reset_process(process, state)?;
         }
