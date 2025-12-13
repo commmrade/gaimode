@@ -148,7 +148,7 @@ pub fn pin_process(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
+pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu_exclude: usize) -> anyhow::Result<()> {
     unsafe {
         let mut set: libc::cpu_set_t = std::mem::zeroed();
 
@@ -156,7 +156,7 @@ pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Resul
         for i in 0..cpus_n {
             libc::CPU_SET(i as usize, &mut set);
         }
-        libc::CPU_CLR(cpu, &mut set);
+        libc::CPU_CLR(cpu_exclude, &mut set);
 
         // libc::CPU_SET(cpu, &mut set);
         let ret = libc::sched_setaffinity(
@@ -169,4 +169,13 @@ pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Resul
         }
     }
     Ok(())
+}
+
+pub fn cpu_core_id(cpu: usize) -> anyhow::Result<usize> {
+    let path = format!("/sys/devices/system/cpu/cpu{}/topology/core_id", cpu);
+    let mut file = std::fs::File::open(&path)?;
+    let mut str = String::new();
+    file.read_to_string(&mut str)?;
+    let num = str.trim().parse::<usize>()?;
+    Ok(num)
 }
