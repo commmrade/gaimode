@@ -35,15 +35,15 @@ async fn handle_packet(
         gaiproto::K_OPTIMIZE_PROCESS => {
             let pid_raw = i32::from_be_bytes(pkt.payload.clone().try_into().unwrap());
             let pid = nix::unistd::Pid::from_raw(pid_raw);
-            tx.send(utils::Commands::OptimizeProcess(pid)).unwrap();
+            tx.send(utils::Commands::OptimizeProcess(pid))?;
         }
         gaiproto::K_RESET_PROCESS => {
             let pid_raw = i32::from_be_bytes(pkt.payload.clone().try_into().unwrap());
             let pid = nix::unistd::Pid::from_raw(pid_raw);
-            tx.send(utils::Commands::ResetProcess(pid)).unwrap();
+            tx.send(utils::Commands::ResetProcess(pid))?;
         }
         gaiproto::K_RESET_ALL => {
-            tx.send(utils::Commands::ResetAll).unwrap();
+            tx.send(utils::Commands::ResetAll)?;
         }
         _ => {
             // Ignore
