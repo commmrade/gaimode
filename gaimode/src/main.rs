@@ -104,7 +104,7 @@ fn main() {
     let mut path = std::env::temp_dir();
     path.push(UDS_FILENAME);
     let stream = std::os::unix::net::UnixStream::connect(&path).unwrap();
-
+    // TODO: Check if dbus service is running if not start it
     match args.command {
         Commands::Run { executable, args } => {
             if let Err(why) = run(executable, args, stream) {
