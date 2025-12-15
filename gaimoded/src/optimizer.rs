@@ -124,7 +124,7 @@ impl Optimizer {
         let mut has_removed = false;
         self.processes.retain(|pid, _| {
             let res = unsafe { nix::libc::kill(pid.as_raw(), 0) };
-            if res < 0 && res != nix::libc::EPERM {
+            if res < 0 && unsafe { *libc::__errno_location() } != nix::libc::EPERM {
                 // if it returns < 0 -> process does not exist, EPERM means process exist, but not enough perms to kill
                 has_removed = true;
                 return false;
