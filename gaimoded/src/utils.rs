@@ -93,7 +93,7 @@ pub fn check_and_run_systemd_service(service_name: &str) -> anyhow::Result<()> {
     );
 
     let state: String = unit_proxy.get("org.freedesktop.systemd1.Unit", "ActiveState")?;
-    if state != "active" {
+    if state != "active" && state != "activating" {
         let (_,): (dbus::Path,) = proxy.method_call(
             "org.freedesktop.systemd1.Manager",
             "StartUnit",
