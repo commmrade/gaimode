@@ -10,10 +10,10 @@ mod utils;
 
 #[tokio::main]
 async fn main() {
-    // if let Err(why) = daemonize() {
-    //     eprintln!("Daemonize failed: {}", why);
-    //     return;
-    // }
+    if let Err(why) = utils::daemonize() {
+        eprintln!("Daemonize failed: {}", why);
+        return;
+    }
 
     let mut path = std::env::temp_dir();
     path.push(utils::UDS_FILENAME);

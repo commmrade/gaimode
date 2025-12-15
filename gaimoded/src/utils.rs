@@ -1,5 +1,8 @@
 use nix::{sys::wait::waitpid, unistd};
-use std::process::exit;
+use std::{
+    os::fd::{AsFd, AsRawFd},
+    process::exit,
+};
 
 pub const UDS_FILENAME: &'static str = "gaimoded_sock";
 
@@ -12,11 +15,9 @@ pub enum Commands {
 #[allow(dead_code)]
 pub fn daemonize() -> anyhow::Result<()> {
     match unsafe { unistd::fork() } {
+        #[allow(unused)]
         Ok(unistd::ForkResult::Parent { child }) => {
-            if let Err(why) = waitpid(child, None) {
-                return Err(anyhow::anyhow!("Failed to waitpid: {}", why));
-            }
-            exit(0);
+            unsafe { nix::libc::_exit(0) };
         }
         Ok(unistd::ForkResult::Child) => {
             if let Err(why) = unistd::setsid() {
@@ -26,10 +27,21 @@ pub fn daemonize() -> anyhow::Result<()> {
             match unsafe { unistd::fork() } {
                 Ok(unistd::ForkResult::Child) => {
                     // daemonized
+                    let null_file = std::fs::OpenOptions::new()
+                        .write(true)
+                        .read(true)
+                        .open("/dev/null")?;
+
+                    nix::unistd::dup2_stdout(null_file.as_fd())?;
+                    nix::unistd::dup2_stdin(null_file.as_fd())?;
+                    nix::unistd::dup2_stderr(null_file.as_fd())?;
+
+                    nix::unistd::chdir("/")?; // chdir to / as daemon
+
                     return Ok(());
                 }
                 Ok(unistd::ForkResult::Parent { .. }) => {
-                    exit(0);
+                    unsafe { nix::libc::_exit(0) };
                 }
                 Err(why) => return Err(anyhow::anyhow!("Fork failed: {}", why)),
             }
