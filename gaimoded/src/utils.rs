@@ -47,7 +47,7 @@ pub fn daemonize() -> anyhow::Result<()> {
             }
         }
         Err(why) => {
-            eprintln!("Fork failed: {}", why);
+            tracing::error!("Fork failed: {}", why);
         }
     }
 

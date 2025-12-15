@@ -44,7 +44,7 @@ pub fn set_process_io_niceness(pid: nix::unistd::Pid, ioniceness: i32) -> anyhow
             );
             if ret < 0 {
                 // Should not fail if failed to change single process' niceness
-                eprintln!("Failed to change TID IO niceness");
+                tracing::error!("Failed to change TID I/O Niceness");
             }
         }
 

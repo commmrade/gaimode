@@ -10,8 +10,10 @@ mod utils;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().pretty().init();
+
     if let Err(why) = utils::daemonize() {
-        eprintln!("Daemonize failed: {}", why);
+        tracing::error!("Daemonization failed: {}", why);
         return;
     }
 
@@ -35,7 +37,7 @@ async fn main() {
     let optimizer_handle = tokio::spawn(async move {
         loop {
             if let Err(why) = optimizer.process(&mut rx).await {
-                eprintln!("Optimization processing failed: {}", why);
+                tracing::error!("Failed to process optimizations: {}", why);
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
@@ -43,7 +45,7 @@ async fn main() {
     let listener_handle = tokio::spawn(async move {
         loop {
             if let Err(why) = listener.process(&tx).await {
-                eprintln!("Listener processing failed: {}", why);
+                tracing::error!("Listener failed: {}", why);
             }
         }
     });

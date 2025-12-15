@@ -48,7 +48,6 @@ pub fn set_gov(path: &Path, gov: &str) -> anyhow::Result<()> {
 pub fn get_govs() -> anyhow::Result<Vec<(PathBuf, String)>> {
     let mut res = Vec::new();
     for entry in glob::glob(SCALING_GOV_POLICY_PATH_GLOB)? {
-        // println!("Entry: {}", entry?.to_string_lossy());
         let path = entry?;
         let mut file = std::fs::File::open(&path)?;
         let mut buf = String::new();

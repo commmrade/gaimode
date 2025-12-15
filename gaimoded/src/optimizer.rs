@@ -112,7 +112,7 @@ impl Optimizer {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        println!("Reset optimizations");
+        tracing::info!("Resetting all optimizations");
         if self.is_optimized {
             self.reset_cpu()?;
             self.reset_processes()?;
@@ -143,7 +143,9 @@ impl Optimizer {
                 utils::Commands::OptimizeProcess(pid) => {
                     if !self.is_optimized {
                         if let Err(_) = self.optimize_cpu() {
-                            eprintln!("Your CPUFreq Policies do not support 'Performance' governor")
+                            tracing::error!(
+                                "Your CPUFreq Policies do not support 'Performance' governor"
+                            );
                         }
                         self.is_optimized = true;
                     }
@@ -169,17 +171,17 @@ impl Optimizer {
 }
 
 fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<()> {
-    println!("Resetting process {}", pid.as_raw());
+    tracing::info!("Resetting process: {}", pid.as_raw());
     if let Err(why) = scheduler::set_process_niceness(
         pid,
         state.niceness.unwrap_or(scheduler::DEFAULT_NICE_VALUE),
     ) {
-        eprintln!("reset niceness failed: {}", why);
+        tracing::error!("Failed to reset process niceness: {}", why);
     }
     if let Err(why) =
         io::set_process_io_niceness(pid, state.ioniceness.unwrap_or(io::DEFAULT_IO_NICE_VALUE))
     {
-        eprintln!("reset io niceness failed: {}", why);
+        tracing::error!("Failed to reset process I/O niceness: {}", why);
     }
 
     let tasks = &utils::get_process_tasks(pid)?; // 0 task is the process itself (main thread)
@@ -188,22 +190,22 @@ fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<(
             nix::unistd::Pid::from_raw(*task as i32),
             state.aff_mask.unwrap_or_else(|| get_aff_default().unwrap()),
         ) {
-            eprintln!("Could not reset aff mask for {}: {}", task, why);
+            tracing::error!("Could not reset process affinity mask: {}", why);
         }
     }
     Ok(())
 }
 
 fn optimize_process(pid: nix::unistd::Pid) -> anyhow::Result<()> {
-    println!("Optimizing process {}", pid.as_raw());
+    tracing::info!("Optimizing process: {}", pid.as_raw());
 
     // nicenessness
     // We can kinda ignore an error, maybe if it fails this it doesnt fail to do any other optimizations
     if let Err(why) = scheduler::set_process_niceness(pid, scheduler::OPTIMIZED_NICE_VALUE) {
-        eprintln!("Niceness failed: {}", why);
+        tracing::error!("Failed to set niceness, not nice: {}", why);
     }
     if let Err(why) = io::set_process_io_niceness(pid, io::OPTIMIZED_IO_NICE_VALUE) {
-        eprintln!("IONiceness failed: {}", why);
+        tracing::error!("Failed to set I/O niceness, not ionice: {}", why);
     }
 
     // CPU Affinity

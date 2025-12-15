@@ -32,7 +32,7 @@ pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Res
 
             let ret = libc::setpriority(libc::PRIO_PROCESS, task_tid, niceness);
             if ret < 0 {
-                eprintln!("Failed to change TID niceness");
+                return Err(anyhow::anyhow!("Could not setpriority"));
             }
         }
         Ok(())
