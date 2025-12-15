@@ -1,4 +1,3 @@
-mod uds;
 use std::{
     ffi::{CStr, CString},
     io::Write,
@@ -33,9 +32,11 @@ enum Commands {
     ResetAll,
 }
 
-fn run(bin_name: String, args: Vec<String>, mut stream: std::os::unix::net::UnixStream) {
-    // TODO: Spin up a daemon if socket not found
-
+fn run(
+    bin_name: String,
+    args: Vec<String>,
+    mut stream: std::os::unix::net::UnixStream,
+) -> anyhow::Result<()> {
     match unsafe { unistd::fork() } {
         Ok(unistd::ForkResult::Parent { child }) => {
             let packet = Gaiproto::new(
@@ -44,7 +45,7 @@ fn run(bin_name: String, args: Vec<String>, mut stream: std::os::unix::net::Unix
                 child.as_raw().to_be_bytes().to_vec(),
             );
             let bytes = packet.convert_to_bytes();
-            stream.write_all(&bytes).unwrap();
+            stream.write_all(&bytes)?;
 
             if let Err(why) = waitpid(child, None) {
                 eprintln!("Failed to wait for child: {}", why);
@@ -52,7 +53,7 @@ fn run(bin_name: String, args: Vec<String>, mut stream: std::os::unix::net::Unix
         }
         Ok(unistd::ForkResult::Child) => {
             let mut bin_args = Vec::<CString>::new();
-            bin_args.push(CString::from_str(&bin_name).unwrap());
+            bin_args.push(CString::from_str(&bin_name)?);
             for arg in args {
                 bin_args.push(CString::from_str(&arg).expect("Failed to create CString"));
             }
@@ -72,26 +73,29 @@ fn run(bin_name: String, args: Vec<String>, mut stream: std::os::unix::net::Unix
             eprintln!("Failed to fork: {}", why);
         }
     }
+    Ok(())
 }
 
-fn reset_process(pid: i32, mut stream: std::os::unix::net::UnixStream) {
+fn reset_process(pid: i32, mut stream: std::os::unix::net::UnixStream) -> anyhow::Result<()> {
     let packet = Gaiproto::new(
         (gaiproto::MIN_PACKET_SIZE + std::mem::size_of_val(&pid)) as u32,
         gaiproto::K_RESET_PROCESS,
         pid.to_be_bytes().to_vec(),
     );
     let bytes = packet.convert_to_bytes();
-    stream.write_all(&bytes).unwrap();
+    stream.write_all(&bytes)?;
+    Ok(())
 }
 
-fn reset_all(mut stream: std::os::unix::net::UnixStream) {
+fn reset_all(mut stream: std::os::unix::net::UnixStream) -> anyhow::Result<()> {
     let packet = Gaiproto::new(
         gaiproto::MIN_PACKET_SIZE as u32,
         gaiproto::K_RESET_ALL,
         Vec::new(),
     );
     let bytes = packet.convert_to_bytes();
-    stream.write_all(&bytes).unwrap();
+    stream.write_all(&bytes)?;
+    Ok(())
 }
 
 fn main() {
@@ -103,14 +107,20 @@ fn main() {
 
     match args.command {
         Commands::Run { executable, args } => {
-            run(executable, args, stream);
+            if let Err(why) = run(executable, args, stream) {
+                eprintln!("Could not run the process: {}", why);
+            }
         }
         Commands::ResetProcess { pid } => {
-            reset_process(pid, stream);
+            if let Err(why) = reset_process(pid, stream) {
+                eprintln!("Could not reset the process: {}", why);
+            }
         }
         #[allow(unused)]
         Commands::ResetAll => {
-            reset_all(stream);
+            if let Err(why) = reset_all(stream) {
+                eprintln!("Could not reset processes");
+            }
         }
     }
 }
