@@ -12,3 +12,4 @@ gaiproto = { path = "../gaiproto" }
 glob = "0.3.3"
 tracing = "0.1.43"
 tracing-subscriber = "0.3.22"
+dbus = "0.9.10"

@@ -1,7 +1,9 @@
+use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
 use nix::{sys::wait::waitpid, unistd};
 use std::{
     os::fd::{AsFd, AsRawFd},
     process::exit,
+    time::Duration,
 };
 
 pub const UDS_FILENAME: &'static str = "gaimoded_sock";
@@ -47,11 +49,9 @@ pub fn daemonize() -> anyhow::Result<()> {
             }
         }
         Err(why) => {
-            tracing::error!("Fork failed: {}", why);
+            return Err(anyhow::anyhow!("Fork failed: {}", why));
         }
     }
-
-    Ok(())
 }
 
 pub fn tasks_in_process_n(pid: nix::unistd::Pid) -> anyhow::Result<u32> {
@@ -69,4 +69,38 @@ pub fn get_process_tasks(pid: nix::unistd::Pid) -> anyhow::Result<Vec<u32>> {
         res.push(task_id);
     }
     Ok(res)
+}
+
+pub fn check_and_run_systemd_service(service_name: &str) -> anyhow::Result<()> {
+    let dbus_con = dbus::blocking::Connection::new_system()?;
+
+    let proxy = dbus_con.with_proxy(
+        "org.freedesktop.systemd1",  // Service name
+        "/org/freedesktop/systemd1", // Object path
+        Duration::from_millis(500),
+    );
+
+    let (unit_path,): (dbus::Path,) = proxy.method_call(
+        "org.freedesktop.systemd1.Manager",
+        "LoadUnit", // Metho name, LoadUnit returns path even if the unit itself is stopped. StartUnit fails to do that
+        (service_name,),
+    )?;
+
+    let unit_proxy = dbus_con.with_proxy(
+        "org.freedesktop.systemd1",
+        unit_path,
+        Duration::from_millis(500),
+    );
+
+    let state: String = unit_proxy.get("org.freedesktop.systemd1.Unit", "ActiveState")?;
+    if state != "active" {
+        let (_,): (dbus::Path,) = proxy.method_call(
+            "org.freedesktop.systemd1.Manager",
+            "StartUnit",
+            (service_name, "replace"),
+        )?;
+        tracing::info!("Successfully started the unit");
+    }
+
+    Ok(())
 }

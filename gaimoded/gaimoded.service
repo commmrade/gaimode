@@ -1,0 +1,8 @@
+[Unit]
+Description=Gaimode service for optimizing process performance
+
+[Service]
+ExecStart=/usr/bin/gaimoded
+
+[Install]
+WantedBy=multi-user.target
