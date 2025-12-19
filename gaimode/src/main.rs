@@ -7,6 +7,9 @@ use std::{
 use clap::{Parser, Subcommand};
 use gaiproto::Gaiproto;
 use nix::{sys::wait::waitpid, unistd};
+
+mod dbus_i;
+
 const UDS_FILENAME: &'static str = "gaimoded_sock";
 
 #[derive(Parser, Debug)]
@@ -99,8 +102,9 @@ fn reset_all(mut stream: std::os::unix::net::UnixStream) -> anyhow::Result<()> {
 }
 
 fn main() {
-    let args = Args::parse();
+    dbus_i::check_or_spin_up_daemon().unwrap();
 
+    let args = Args::parse();
     let mut path = std::env::temp_dir();
     path.push(UDS_FILENAME);
     let stream = std::os::unix::net::UnixStream::connect(&path).unwrap();

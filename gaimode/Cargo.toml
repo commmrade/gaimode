@@ -8,3 +8,4 @@ nix = { version = "0.30.1", features = ["process"] }
 gaiproto = { path = "../gaiproto" }
 clap = { version = "4.5.53", features = ["derive"] }
 anyhow = "1.0.100"
+dbus = "0.9.10"
