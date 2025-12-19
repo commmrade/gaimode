@@ -10,3 +10,6 @@ cargo run run <app> # it should start the daemon
 # or
 systemctl enable --user gaimoded
 systemctl start --user gaimoded
+
+# Setting up permissions
+# ...
