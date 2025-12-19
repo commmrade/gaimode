@@ -10,6 +10,8 @@ mod utils;
 
 #[tokio::main]
 async fn main() {
+    // TODO: Run in systemd/double-fork mode depending on/lack of parameters
+    //
     tracing_subscriber::fmt().pretty().init();
 
     let mut path = std::env::temp_dir();
