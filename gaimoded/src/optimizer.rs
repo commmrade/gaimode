@@ -142,10 +142,8 @@ impl Optimizer {
             match command {
                 utils::Commands::OptimizeProcess(pid) => {
                     if !self.is_optimized {
-                        if let Err(_) = self.optimize_cpu() {
-                            tracing::error!(
-                                "Your CPUFreq Policies do not support 'Performance' governor"
-                            );
+                        if let Err(why) = self.optimize_cpu() {
+                            tracing::error!("Error optimizing CPU: {}", why);
                         }
                         self.is_optimized = true;
                     }
