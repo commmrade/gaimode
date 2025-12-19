@@ -1,5 +1,7 @@
 use std::{os::unix::fs::PermissionsExt, time::Duration};
 
+use clap::{Parser, arg};
+
 mod cpu;
 mod io;
 mod listener;
@@ -8,10 +10,23 @@ mod scheduler;
 mod signals;
 mod utils;
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    forked: bool,
+}
+
 #[tokio::main]
 async fn main() {
-    // TODO: Run in systemd/double-fork mode depending on/lack of parameters
-    //
+    // TODO: Run in systemd/double-fork mode depending on/lack of parameters (systemd is the default way)
+    let args = Args::parse();
+    if args.forked {
+        if let Err(why) = utils::daemonize() {
+            eprintln!("Failed to daemonize: {}", why);
+            return;
+        }
+    }
+
     tracing_subscriber::fmt().pretty().init();
 
     let mut path = std::env::temp_dir();

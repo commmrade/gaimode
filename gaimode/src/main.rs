@@ -16,6 +16,9 @@ const UDS_FILENAME: &'static str = "gaimoded_sock";
 struct Args {
     #[command(subcommand)]
     command: Commands,
+
+    #[arg(long)]
+    forked: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -102,13 +105,20 @@ fn reset_all(mut stream: std::os::unix::net::UnixStream) -> anyhow::Result<()> {
 }
 
 fn main() {
-    dbus_i::check_or_spin_up_daemon().unwrap();
+    // TODO: A way to avoid dealing with systemd daemons (using args), systemd is the default way
 
     let args = Args::parse();
     let mut path = std::env::temp_dir();
     path.push(UDS_FILENAME);
     let stream = std::os::unix::net::UnixStream::connect(&path).unwrap();
     // TODO: Check if dbus service is running if not start it
+    if !args.forked {
+        if let Err(why) = dbus_i::check_or_spin_up_daemon() {
+            eprintln!("Failed to check for a daemon: {}", why);
+            return;
+        }
+    }
+
     match args.command {
         Commands::Run { executable, args } => {
             if let Err(why) = run(executable, args, stream) {
