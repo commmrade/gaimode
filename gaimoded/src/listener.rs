@@ -10,7 +10,7 @@ impl UdsListener {
     pub fn new(listener: tokio::net::UnixListener) -> UdsListener {
         UdsListener { listener }
     }
-    pub async fn process(&mut self, tx: &UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
+    pub async fn process(&mut self, tx: UnboundedSender<utils::Commands>) -> anyhow::Result<()> {
         match self.listener.accept().await {
             Ok((mut stream, _addr)) => {
                 let mut buf: [u8; 2048] = [0u8; 2048];

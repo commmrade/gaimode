@@ -5,7 +5,11 @@ use std::{
 };
 
 use clap::{Parser, arg};
-use tokio::signal::unix::SignalKind;
+use tokio::{
+    signal::unix::SignalKind,
+    task::{JoinError, JoinSet},
+};
+use tokio_util::task::AbortOnDropHandle;
 
 mod cpu;
 mod io;
@@ -51,7 +55,8 @@ async fn main() {
     let mut optimizer = optimizer::Optimizer::new();
     let mut listener = listener::UdsListener::new(listener);
 
-    let optimizer_handle = tokio::spawn(async move {
+    let mut tasks_set = JoinSet::new();
+    tasks_set.spawn(async move {
         loop {
             if let Err(why) = optimizer.process(&mut rx).await {
                 tracing::error!("Failed to process optimizations: {}", why);
@@ -59,22 +64,21 @@ async fn main() {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
-    let listener_handle = tokio::spawn(async move {
+
+    tasks_set.spawn(async move {
         loop {
-            if let Err(why) = listener.process(&tx).await {
+            if let Err(why) = listener.process(tx.clone()).await {
                 tracing::error!("Listener failed: {}", why);
             }
         }
     });
-
-    // Waits for one of the handlers to finish, if 1 finished, the other one should as well
     tokio::select! {
-        _ = optimizer_handle => {}
-        _ = listener_handle => {}
         _ = signal_stream.recv() => {
             tracing::info!("Shutting down...");
         }
     }
+
+    tasks_set.shutdown().await;
 
     if let Err(why) = nix::unistd::unlink(&path) {
         tracing::error!("Wasn't able to unlink UDS file: {}", why);

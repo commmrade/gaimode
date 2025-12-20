@@ -14,3 +14,4 @@ tracing = "0.1.43"
 tracing-subscriber = "0.3.22"
 dbus = "0.9.10"
 clap = { version = "4.5.53", features = ["derive"] }
+tokio-util = { version = "0.7.17", features = ["rt"] }
