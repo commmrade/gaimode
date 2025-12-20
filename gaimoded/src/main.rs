@@ -1,4 +1,8 @@
-use std::{os::unix::fs::PermissionsExt, time::Duration};
+use std::{
+    os::unix::fs::PermissionsExt,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use clap::{Parser, arg};
 
@@ -16,8 +20,11 @@ struct Args {
     forked: bool,
 }
 
+static SHOULD_TERMINATE: AtomicBool = AtomicBool::new(false);
+
 #[tokio::main]
 async fn main() {
+    signals::setup_signals();
     // TODO: Run in systemd/double-fork mode depending on/lack of parameters (systemd is the default way)
     let args = Args::parse();
     if args.forked {
@@ -42,16 +49,24 @@ async fn main() {
     std::fs::set_permissions(&path, perms).expect("chmod failed");
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
+
     let mut optimizer = optimizer::Optimizer::new();
     let mut listener = listener::UdsListener::new(listener);
 
     // This looks better than looping in process since now i can make optimizer and listener a static var and lock a mutex when using them
     let optimizer_handle = tokio::spawn(async move {
         loop {
+            if SHOULD_TERMINATE.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Err(why) = optimizer.graceful_shutdown() {
+                    tracing::error!("Shutdown failed: {}", why);
+                }
+                break; // Get out of loop, which triggers select
+            }
+
             if let Err(why) = optimizer.process(&mut rx).await {
                 tracing::error!("Failed to process optimizations: {}", why);
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
     let listener_handle = tokio::spawn(async move {
@@ -59,6 +74,7 @@ async fn main() {
             if let Err(why) = listener.process(&tx).await {
                 tracing::error!("Listener failed: {}", why);
             }
+            println!("fick");
         }
     });
 

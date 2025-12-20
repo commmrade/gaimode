@@ -166,6 +166,11 @@ impl Optimizer {
 
         Ok(())
     }
+
+    pub fn graceful_shutdown(mut self) -> anyhow::Result<()> {
+        self.reset()?;
+        Ok(())
+    }
 }
 
 fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<()> {
