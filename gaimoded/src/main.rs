@@ -5,13 +5,13 @@ use std::{
 };
 
 use clap::{Parser, arg};
+use tokio::signal::unix::SignalKind;
 
 mod cpu;
 mod io;
 mod listener;
 mod optimizer;
 mod scheduler;
-mod signals;
 mod utils;
 
 #[derive(Parser, Debug)]
@@ -20,12 +20,10 @@ struct Args {
     forked: bool,
 }
 
-static SHOULD_TERMINATE: AtomicBool = AtomicBool::new(false);
-
 #[tokio::main]
 async fn main() {
-    signals::setup_signals();
-    // TODO: Run in systemd/double-fork mode depending on/lack of parameters (systemd is the default way)
+    let mut signal_stream = tokio::signal::unix::signal(SignalKind::terminate())
+        .expect("Wasn't able to set up signal handlers");
     let args = Args::parse();
     if args.forked {
         if let Err(why) = utils::daemonize() {
@@ -54,15 +52,9 @@ async fn main() {
     let mut listener = listener::UdsListener::new(listener);
 
     // This looks better than looping in process since now i can make optimizer and listener a static var and lock a mutex when using them
+
     let optimizer_handle = tokio::spawn(async move {
         loop {
-            if SHOULD_TERMINATE.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Err(why) = optimizer.graceful_shutdown() {
-                    tracing::error!("Shutdown failed: {}", why);
-                }
-                break; // Get out of loop, which triggers select
-            }
-
             if let Err(why) = optimizer.process(&mut rx).await {
                 tracing::error!("Failed to process optimizations: {}", why);
             }
@@ -82,6 +74,9 @@ async fn main() {
     tokio::select! {
         _ = optimizer_handle => {}
         _ = listener_handle => {}
+        _ = signal_stream.recv() => {
+            tracing::info!("Shutting down...");
+        }
     }
 
     nix::unistd::unlink(&path).unwrap(); // TODO: Should be done on exit

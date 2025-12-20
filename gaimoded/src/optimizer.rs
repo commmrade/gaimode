@@ -167,9 +167,15 @@ impl Optimizer {
         Ok(())
     }
 
-    pub fn graceful_shutdown(mut self) -> anyhow::Result<()> {
+    pub fn graceful_shutdown(&mut self) -> anyhow::Result<()> {
         self.reset()?;
         Ok(())
+    }
+}
+
+impl Drop for Optimizer {
+    fn drop(&mut self) {
+        self.graceful_shutdown().unwrap();
     }
 }
 
