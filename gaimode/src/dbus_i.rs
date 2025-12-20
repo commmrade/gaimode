@@ -34,10 +34,6 @@ pub fn check_or_spin_up_daemon() -> anyhow::Result<()> {
             (SERVICE_NAME, "replace"),
         )?;
         std::thread::sleep(Duration::from_millis(150));
-
-        // return Err(anyhow::anyhow!(
-        //     "Gaimoded daemon is not running, please start it with `sudo systemctl start gaimoded`"
-        // ));
     }
     Ok(())
 }
