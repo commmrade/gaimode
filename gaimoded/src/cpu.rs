@@ -4,8 +4,6 @@ use std::{
     time::Duration,
 };
 
-use libc::sched_setaffinity;
-
 pub const SCALING_AV_GOV_POLICY_PATH_BLOB: &'static str =
     "/sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors";
 pub const SCALING_GOV_POLICY_PATH_GLOB: &'static str =

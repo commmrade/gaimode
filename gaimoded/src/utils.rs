@@ -50,6 +50,7 @@ pub fn daemonize() -> anyhow::Result<()> {
     }
 }
 
+#[allow(dead_code)]
 pub fn tasks_in_process_n(pid: nix::unistd::Pid) -> anyhow::Result<u32> {
     let path = format!("/proc/{}/task", pid.as_raw());
     let dir = std::fs::read_dir(path)?;

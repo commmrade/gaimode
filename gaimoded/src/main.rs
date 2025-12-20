@@ -1,15 +1,7 @@
-use std::{
-    os::unix::fs::PermissionsExt,
-    sync::{Arc, atomic::AtomicBool},
-    time::Duration,
-};
+use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 use clap::{Parser, arg};
-use tokio::{
-    signal::unix::SignalKind,
-    task::{JoinError, JoinSet},
-};
-use tokio_util::task::AbortOnDropHandle;
+use tokio::{signal::unix::SignalKind, task::JoinSet};
 
 mod cpu;
 mod io;
