@@ -3,7 +3,7 @@ use std::time::Duration;
 const SERVICE_NAME: &'static str = "gaimoded.service";
 
 pub fn check_or_spin_up_daemon() -> anyhow::Result<()> {
-    let conn = dbus::blocking::Connection::new_session()?;
+    let conn = dbus::blocking::Connection::new_system()?;
 
     let timeout = Duration::from_millis(500);
 
@@ -28,13 +28,16 @@ pub fn check_or_spin_up_daemon() -> anyhow::Result<()> {
     let state = state.0;
 
     if state != "active" && state != "activating" {
-        // run
         let (_,): (dbus::Path,) = proxy.method_call(
             "org.freedesktop.systemd1.Manager",
             "StartUnit",
             (SERVICE_NAME, "replace"),
         )?;
         std::thread::sleep(Duration::from_millis(150));
+
+        // return Err(anyhow::anyhow!(
+        //     "Gaimoded daemon is not running, please start it with `sudo systemctl start gaimoded`"
+        // ));
     }
     Ok(())
 }

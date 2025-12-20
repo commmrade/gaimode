@@ -38,8 +38,8 @@ async fn main() {
     }
 
     let listener = tokio::net::UnixListener::bind(&path).expect("UDS creation failed");
-    // let perms = std::fs::Permissions::from_mode(0x666);
-    // std::fs::set_permissions(&path, perms).expect("chmod failed");
+    let perms = std::fs::Permissions::from_mode(0x666);
+    std::fs::set_permissions(&path, perms).expect("chmod failed");
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
     let mut optimizer = optimizer::Optimizer::new();
