@@ -51,8 +51,6 @@ async fn main() {
     let mut optimizer = optimizer::Optimizer::new();
     let mut listener = listener::UdsListener::new(listener);
 
-    // This looks better than looping in process since now i can make optimizer and listener a static var and lock a mutex when using them
-
     let optimizer_handle = tokio::spawn(async move {
         loop {
             if let Err(why) = optimizer.process(&mut rx).await {
@@ -66,7 +64,6 @@ async fn main() {
             if let Err(why) = listener.process(&tx).await {
                 tracing::error!("Listener failed: {}", why);
             }
-            println!("fick");
         }
     });
 
@@ -79,5 +76,7 @@ async fn main() {
         }
     }
 
-    nix::unistd::unlink(&path).unwrap(); // TODO: Should be done on exit
+    if let Err(why) = nix::unistd::unlink(&path) {
+        tracing::error!("Wasn't able to unlink UDS file: {}", why);
+    }
 }
