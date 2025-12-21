@@ -1,7 +1,10 @@
 use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 use clap::{Parser, arg};
-use tokio::{signal::unix::SignalKind, task::JoinSet};
+use tokio::{
+    signal::unix::{Signal, SignalKind},
+    task::JoinSet,
+};
 
 mod cpu;
 mod io;
@@ -18,8 +21,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    let mut signal_stream = tokio::signal::unix::signal(SignalKind::terminate())
-        .expect("Wasn't able to set up signal handlers");
+    let mut sigterm_signal = tokio::signal::unix::signal(SignalKind::terminate())
+        .expect("Wasn't able to set up SIGTERM handler"); // systemctl stop service sends this
+    let mut sigint_signal = tokio::signal::unix::signal(SignalKind::interrupt())
+        .expect("Wasn't able to set up SIGINT handler"); // CTRL+C sends this
+
     let args = Args::parse();
     if args.forked {
         if let Err(why) = utils::daemonize() {
@@ -64,8 +70,12 @@ async fn main() {
             }
         }
     });
+
     tokio::select! {
-        _ = signal_stream.recv() => {
+        _ = sigterm_signal.recv() => {
+            tracing::info!("Shutting down...");
+        }
+        _ = sigint_signal.recv() => {
             tracing::info!("Shutting down...");
         }
     }
