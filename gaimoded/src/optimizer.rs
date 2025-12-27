@@ -32,7 +32,7 @@ impl Default for ProcessState {
         Self {
             niceness: None,
             ioniceness: None,
-            aff_mask: unsafe { std::mem::zeroed() },
+            aff_mask: None,
         }
     }
 }
@@ -57,31 +57,35 @@ impl Optimizer {
     }
 
     fn optimize_cpu(&mut self) -> anyhow::Result<()> {
-        if !cpu::is_gov_available(cpu::PERF_GOV)? {
-            return Err(anyhow::anyhow!(
-                "Your policies do not support 'Performance' governor"
-            ));
+        if self.settings.cpu_governor.enabled {
+            if !cpu::is_gov_available(cpu::PERF_GOV)? {
+                return Err(anyhow::anyhow!(
+                    "Your policies do not support 'Performance' governor"
+                ));
+            }
+
+            let govs = cpu::get_govs()?;
+
+            let mut new_old_global_state = Vec::new();
+            new_old_global_state.reserve(govs.len());
+            for (path, gov) in govs.into_iter() {
+                let mut state = State::default();
+                state.governor = gov;
+                state.path = path;
+                new_old_global_state.push(state);
+            }
+            self.old_sys_state = Some(new_old_global_state);
+
+            cpu::set_gov_all(cpu::PERF_GOV)?;
         }
-
-        let govs = cpu::get_govs()?;
-
-        let mut new_old_global_state = Vec::new();
-        new_old_global_state.reserve(govs.len());
-        for (path, gov) in govs.into_iter() {
-            let mut state = State::default();
-            state.governor = gov;
-            state.path = path;
-            new_old_global_state.push(state);
-        }
-        self.old_sys_state = Some(new_old_global_state);
-
-        cpu::set_gov_all(cpu::PERF_GOV)?;
         Ok(())
     }
     fn reset_cpu(&mut self) -> anyhow::Result<()> {
-        if let Some(old_state) = self.old_sys_state.as_ref() {
-            for state in old_state {
-                cpu::set_gov(&state.path, &state.governor)?;
+        if self.settings.cpu_governor.enabled {
+            if let Some(old_state) = self.old_sys_state.as_ref() {
+                for state in old_state {
+                    cpu::set_gov(&state.path, &state.governor)?;
+                }
             }
         }
 
@@ -90,25 +94,31 @@ impl Optimizer {
     }
 
     fn add_process(&mut self, pid: nix::unistd::Pid) -> anyhow::Result<()> {
-        let old_niceness: i32 =
-            scheduler::process_niceness(pid).unwrap_or(scheduler::DEFAULT_NICE_VALUE);
-        let old_ioniceness: i32 = io::process_io_niceness(pid).unwrap_or(io::DEFAULT_IO_NICE_VALUE);
-
         let mut pstate = ProcessState::default();
-        pstate.niceness = Some(old_niceness);
-        pstate.ioniceness = Some(old_ioniceness);
-        pstate.aff_mask =
-            Some(cpu::get_aff_mask(pid).unwrap_or_else(|_| get_aff_default().unwrap()));
+
+        if self.settings.niceness.enabled {
+            let old_niceness: i32 =
+                scheduler::process_niceness(pid).unwrap_or(scheduler::DEFAULT_NICE_VALUE);
+            pstate.niceness = Some(old_niceness);
+        }
+        if self.settings.ioniceness.enabled {
+            let old_ioniceness: i32 =
+                io::process_io_niceness(pid).unwrap_or(io::DEFAULT_IO_NICE_VALUE);
+            pstate.ioniceness = Some(old_ioniceness);
+        }
+        if self.settings.cpu_affinity.enabled {
+            pstate.aff_mask =
+                Some(cpu::get_aff_mask(pid).unwrap_or_else(|_| get_aff_default().unwrap()));
+        }
 
         self.processes.insert(pid, pstate);
-
-        optimize_process(pid)?;
+        optimize_process(pid, &self.settings)?;
         Ok(())
     }
 
     fn reset_processes(&mut self) -> anyhow::Result<()> {
         for (process, state) in self.processes.drain() {
-            reset_process(process, state)?;
+            reset_process(process, state, &self.settings)?;
         }
         Ok(())
     }
@@ -140,7 +150,7 @@ impl Optimizer {
         &mut self,
         rx: &mut UnboundedReceiver<utils::Commands>,
     ) -> anyhow::Result<()> {
-        if let Ok(command) = rx.try_recv() {
+        while let Ok(command) = rx.try_recv() {
             match command {
                 utils::Commands::OptimizeProcess(pid) => {
                     if !self.is_optimized {
@@ -154,7 +164,7 @@ impl Optimizer {
                 }
                 utils::Commands::ResetProcess(pid) => {
                     if let Some(state) = self.processes.remove(&pid) {
-                        reset_process(pid, state)?;
+                        reset_process(pid, state, &self.settings)?;
                     }
                 }
                 utils::Commands::ResetAll => self.reset()?,
@@ -181,64 +191,80 @@ impl Drop for Optimizer {
     }
 }
 
-fn reset_process(pid: nix::unistd::Pid, state: ProcessState) -> anyhow::Result<()> {
+fn reset_process(
+    pid: nix::unistd::Pid,
+    state: ProcessState,
+    settings: &cfg::Settings,
+) -> anyhow::Result<()> {
     tracing::info!("Resetting process: {}", pid.as_raw());
-    if let Err(why) = scheduler::set_process_niceness(
-        pid,
-        state.niceness.unwrap_or(scheduler::DEFAULT_NICE_VALUE),
-    ) {
-        tracing::error!("Failed to reset process niceness: {}", why);
-    }
-    if let Err(why) =
-        io::set_process_io_niceness(pid, state.ioniceness.unwrap_or(io::DEFAULT_IO_NICE_VALUE))
-    {
-        tracing::error!("Failed to reset process I/O niceness: {}", why);
+
+    if settings.niceness.enabled {
+        if let Err(why) = scheduler::set_process_niceness(
+            pid,
+            state.niceness.unwrap_or(scheduler::DEFAULT_NICE_VALUE),
+        ) {
+            tracing::error!("Failed to reset process niceness: {}", why);
+        }
     }
 
-    let tasks = &utils::get_process_tasks(pid)?; // 0 task is the process itself (main thread)
-    for task in tasks {
-        if let Err(why) = cpu::set_aff_mask(
-            nix::unistd::Pid::from_raw(*task as i32),
-            state.aff_mask.unwrap_or_else(|| get_aff_default().unwrap()),
-        ) {
-            tracing::error!("Could not reset process affinity mask: {}", why);
+    if settings.ioniceness.enabled {
+        if let Err(why) =
+            io::set_process_io_niceness(pid, state.ioniceness.unwrap_or(io::DEFAULT_IO_NICE_VALUE))
+        {
+            tracing::error!("Failed to reset process I/O niceness: {}", why);
+        }
+    }
+
+    if settings.cpu_affinity.enabled {
+        let tasks = &utils::get_process_tasks(pid)?; // 0 task is the process itself (main thread)
+        for task in tasks {
+            if let Err(why) = cpu::set_aff_mask(
+                nix::unistd::Pid::from_raw(*task as i32),
+                state.aff_mask.unwrap_or_else(|| get_aff_default().unwrap()),
+            ) {
+                tracing::error!("Could not reset process affinity mask: {}", why);
+            }
         }
     }
     Ok(())
 }
 
-fn optimize_process(pid: nix::unistd::Pid) -> anyhow::Result<()> {
+fn optimize_process(pid: nix::unistd::Pid, settings: &cfg::Settings) -> anyhow::Result<()> {
     tracing::info!("Optimizing process: {}", pid.as_raw());
 
     // nicenessness
     // We can kinda ignore an error, maybe if it fails this it doesnt fail to do any other optimizations
-    if let Err(why) = scheduler::set_process_niceness(pid, scheduler::OPTIMIZED_NICE_VALUE) {
-        tracing::error!("Failed to set niceness, not nice: {}", why);
+    if settings.niceness.enabled {
+        if let Err(why) = scheduler::set_process_niceness(pid, scheduler::OPTIMIZED_NICE_VALUE) {
+            tracing::error!("Failed to set niceness, not nice: {}", why);
+        }
     }
-    if let Err(why) = io::set_process_io_niceness(pid, io::OPTIMIZED_IO_NICE_VALUE) {
-        tracing::error!("Failed to set I/O niceness, not ionice: {}", why);
+    if settings.ioniceness.enabled {
+        if let Err(why) = io::set_process_io_niceness(pid, io::OPTIMIZED_IO_NICE_VALUE) {
+            tracing::error!("Failed to set I/O niceness, not ionice: {}", why);
+        }
     }
 
     // CPU Affinity
     // Find the lowest loaded cpu
-    // TODO: Is there a better algo?
-    // And should cpu affinity be disabled by default
-    if let Ok(mut cpu_loads) = cpu::cpus_load() {
-        cpu_loads.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    if settings.cpu_affinity.enabled {
+        if let Ok(mut cpu_loads) = cpu::cpus_load() {
+            cpu_loads.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-        let mut cpu_idx = 0;
-        for (idx, _) in cpu_loads.iter() {
-            // Note: shouldn't pin to core 0 since it is heavily used by the kernel for OS stuff
-            if cpu::cpu_core_id(*idx)? > 0 {
-                cpu_idx = *idx;
-                break;
+            let mut cpu_idx = 0;
+            for (idx, _) in cpu_loads.iter() {
+                // Note: shouldn't pin to core 0 since it is heavily used by the kernel for OS stuff
+                if cpu::cpu_core_id(*idx)? > 0 {
+                    cpu_idx = *idx;
+                    break;
+                }
             }
-        }
 
-        cpu::pin_process(pid, cpu_idx)?;
-        let tasks = &utils::get_process_tasks(pid)?[1..]; // 0 task is the process itself (main thread)
-        for task in tasks {
-            cpu::pin_process_excluding(nix::unistd::Pid::from_raw(*task as i32), cpu_idx)?;
+            cpu::pin_process(pid, cpu_idx)?;
+            let tasks = &utils::get_process_tasks(pid)?[1..]; // 0 task is the process itself (main thread)
+            for task in tasks {
+                cpu::pin_process_excluding(nix::unistd::Pid::from_raw(*task as i32), cpu_idx)?;
+            }
         }
     }
 
