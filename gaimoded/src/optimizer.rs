@@ -87,8 +87,6 @@ impl Optimizer {
                 }
             }
         }
-
-        self.is_optimized = false;
         Ok(())
     }
 
@@ -129,6 +127,7 @@ impl Optimizer {
     fn reset(&mut self) -> anyhow::Result<()> {
         tracing::info!("Resetting all optimizations");
         if self.is_optimized {
+            self.is_optimized = false;
             self.reset_processes()?;
             self.reset_cpu()?;
         }
