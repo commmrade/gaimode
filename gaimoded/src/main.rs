@@ -20,17 +20,6 @@ struct Args {
     forked: bool,
 }
 
-fn get_cfg() -> anyhow::Result<cfg::Settings> {
-    let mut config_path = std::env::home_dir().ok_or(anyhow::anyhow!("No home dir set"))?;
-    config_path.push(".config/gaimode");
-    std::fs::create_dir(&config_path)?;
-    config_path.push("settings.toml");
-
-    Ok(cfg::Settings::from_file(&config_path.to_str().ok_or(
-        anyhow::anyhow!("Could not convert path to str"),
-    )?)?)
-}
-
 #[tokio::main]
 async fn main() {
     let mut sigterm_signal = tokio::signal::unix::signal(SignalKind::terminate())
@@ -62,7 +51,7 @@ async fn main() {
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<utils::Commands>();
 
-    let cfg = get_cfg().unwrap_or_else(|_| cfg::Settings::default());
+    let cfg = cfg::get_cfg().unwrap_or_else(|_| cfg::Settings::default());
     let mut optimizer = optimizer::Optimizer::new(cfg);
     let mut listener = listener::UdsListener::new(listener);
 
