@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
-    cpu, io, scheduler,
+    cfg, cpu, io, scheduler,
     utils::{self},
 };
 
@@ -43,14 +43,16 @@ pub struct Optimizer {
     old_sys_state: Option<Vec<State>>, // p
     processes: HashMap<nix::unistd::Pid, ProcessState>,
     is_optimized: bool,
+    settings: cfg::Settings,
 }
 
 impl Optimizer {
-    pub fn new() -> Self {
+    pub fn new(settings: cfg::Settings) -> Self {
         Self {
             old_sys_state: None,
             processes: HashMap::new(),
             is_optimized: false,
+            settings,
         }
     }
 
@@ -219,6 +221,8 @@ fn optimize_process(pid: nix::unistd::Pid) -> anyhow::Result<()> {
 
     // CPU Affinity
     // Find the lowest loaded cpu
+    // TODO: Is there a better algo?
+    // And should cpu affinity be disabled by default
     if let Ok(mut cpu_loads) = cpu::cpus_load() {
         cpu_loads.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 

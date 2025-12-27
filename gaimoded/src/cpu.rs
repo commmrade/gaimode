@@ -9,10 +9,6 @@ pub const SCALING_AV_GOV_POLICY_PATH_BLOB: &'static str =
 pub const SCALING_GOV_POLICY_PATH_GLOB: &'static str =
     "/sys/devices/system/cpu/cpufreq/policy*/scaling_governor";
 pub const PERF_GOV: &'static str = "performance";
-#[allow(dead_code)]
-pub const SCHEDUTIL_GOV: &'static str = "schedutil";
-#[allow(dead_code)]
-pub const POWERSAVE_GOV: &'static str = "powersave";
 
 pub fn is_gov_available(gov: &str) -> anyhow::Result<bool> {
     // NOTE: 1. cpu*/cpufreq is symlink to ../cpufreq/policy*
@@ -78,7 +74,7 @@ pub fn cpus_load() -> anyhow::Result<Vec<(usize, f32)>> {
         let mut file = std::fs::File::open("/proc/stat")?;
         file.read_to_string(&mut cpu_stat_start)?;
     }
-    std::thread::sleep(Duration::from_secs(1)); // Can i avoid this sleep
+    std::thread::sleep(Duration::from_secs(1));
     {
         let mut file = std::fs::File::open("/proc/stat")?;
         file.read_to_string(&mut cpu_stat_end)?;

@@ -1,0 +1,16 @@
+[cpu_affinity]
+enabled = true
+
+[cpu_governor]
+enabled = true
+optimized_type = "performance"
+
+[niceness]
+enabled = true
+optimized_value = -10
+default_value = 0
+
+[ioniceness]
+enabled = true
+optimized_value = 1
+default_value = 4
