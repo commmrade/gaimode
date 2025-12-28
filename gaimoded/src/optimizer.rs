@@ -7,11 +7,6 @@ use crate::{
     utils::{self},
 };
 
-struct SystemState {
-    cpus_state: Vec<CpuState>,
-}
-
-#[allow(dead_code)]
 struct CpuState {
     path: PathBuf,
     governor: String,
@@ -41,9 +36,13 @@ impl Default for ProcessState {
     }
 }
 
+struct SystemState {
+    cpus_state: Vec<CpuState>,
+}
+
 #[allow(dead_code)]
 pub struct Optimizer {
-    system_state: Option<SystemState>, // p
+    system_state: Option<SystemState>, // optimizer state basically
     processes: HashMap<nix::unistd::Pid, ProcessState>,
     settings: cfg::Settings,
 }
@@ -124,8 +123,8 @@ impl Optimizer {
         self.processes.retain(|pid, _| {
             // let res = unsafe { nix::libc::kill(pid.as_raw(), 0) }
             match nix::sys::signal::kill(*pid, None) {
-                Ok(_) => return true,                         // процесс жив
-                Err(nix::errno::Errno::EPERM) => return true, // жив, но нет прав
+                Ok(_) => return true,                         // process alive
+                Err(nix::errno::Errno::EPERM) => return true, // alive, but not enough permissions to send the signal
                 Err(_) => {
                     has_removed = true;
                     return false;
@@ -191,8 +190,8 @@ impl Optimizer {
             }
         }
 
-        self.clear_dead_pids();
         if let Some(_) = self.system_state.as_ref() {
+            self.clear_dead_pids();
             if self.processes.is_empty() {
                 // No processes to track, so reset the system state
                 self.reset()?;

@@ -30,18 +30,24 @@ pub fn set_gov_all(gov: &str) -> anyhow::Result<()> {
     // If changing 1 governor fails, don't give up, continue
     // We captured all state already, we can reset it later
     for entry in glob {
-        let entry = entry?;
-        match std::fs::OpenOptions::new().write(true).open(&entry) {
-            Ok(mut file) => {
-                if let Err(why) = file.write(gov.as_bytes()) {
-                    tracing::error!(
-                        "Setting gov for {} failed: {}",
-                        entry.to_string_lossy(),
-                        why
-                    );
+        match entry {
+            Ok(entry) => match std::fs::OpenOptions::new().write(true).open(&entry) {
+                Ok(mut file) => {
+                    if let Err(why) = file.write(gov.as_bytes()) {
+                        tracing::error!(
+                            "Setting gov for {} failed: {}",
+                            entry.to_string_lossy(),
+                            why
+                        );
+                    }
                 }
+                Err(why) => {
+                    tracing::error!("Opening policy file failed: {}", why);
+                }
+            },
+            Err(why) => {
+                tracing::error!("glob unreadable: {}", why);
             }
-            Err(why) => return Err(why.into()),
         }
     }
     Ok(())
