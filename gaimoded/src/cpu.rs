@@ -26,9 +26,23 @@ pub fn is_gov_available(gov: &str) -> anyhow::Result<bool> {
 
 pub fn set_gov_all(gov: &str) -> anyhow::Result<()> {
     // Since one policy can be used by several cores, it's faster to iterate policies
-    for entry in glob::glob(SCALING_GOV_POLICY_PATH_GLOB)? {
-        let mut file = std::fs::OpenOptions::new().write(true).open(entry?)?;
-        file.write(gov.as_bytes())?;
+    let glob = glob::glob(SCALING_GOV_POLICY_PATH_GLOB)?;
+    // If changing 1 governor fails, don't give up, continue
+    // We captured all state already, we can reset it later
+    for entry in glob {
+        let entry = entry?;
+        match std::fs::OpenOptions::new().write(true).open(&entry) {
+            Ok(mut file) => {
+                if let Err(why) = file.write(gov.as_bytes()) {
+                    tracing::error!(
+                        "Setting gov for {} failed: {}",
+                        entry.to_string_lossy(),
+                        why
+                    );
+                }
+            }
+            Err(why) => return Err(why.into()),
+        }
     }
     Ok(())
 }

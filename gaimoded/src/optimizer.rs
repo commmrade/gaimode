@@ -7,12 +7,16 @@ use crate::{
     utils::{self},
 };
 
+struct SystemState {
+    cpus_state: Vec<CpuState>,
+}
+
 #[allow(dead_code)]
-struct State {
+struct CpuState {
     path: PathBuf,
     governor: String,
 }
-impl Default for State {
+impl Default for CpuState {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
@@ -39,25 +43,24 @@ impl Default for ProcessState {
 
 #[allow(dead_code)]
 pub struct Optimizer {
-    old_sys_state: Option<Vec<State>>, // p
+    system_state: Option<SystemState>, // p
     processes: HashMap<nix::unistd::Pid, ProcessState>,
-    is_optimized: bool,
     settings: cfg::Settings,
 }
 
 impl Optimizer {
     pub fn new(settings: cfg::Settings) -> Self {
         Self {
-            old_sys_state: None,
+            system_state: None,
             processes: HashMap::new(),
-            is_optimized: false,
             settings,
         }
     }
 
-    fn optimize_cpu(&mut self) -> anyhow::Result<()> {
+    fn optimize(&mut self) -> anyhow::Result<()> {
         if self.settings.cpu_governor.enabled {
-            if !cpu::is_gov_available(cpu::PERF_GOV)? {
+            let is_perf_supported = cpu::is_gov_available(cpu::PERF_GOV)?;
+            if !is_perf_supported {
                 return Err(anyhow::anyhow!(
                     "Your policies do not support 'Performance' governor"
                 ));
@@ -65,58 +68,38 @@ impl Optimizer {
 
             let govs = cpu::get_govs()?;
 
-            let mut new_old_global_state = Vec::new();
-            new_old_global_state.reserve(govs.len());
+            let mut cpus_state = Vec::new();
+            cpus_state.reserve(govs.len());
             for (path, gov) in govs.into_iter() {
-                let mut state = State::default();
+                let mut state = CpuState::default();
                 state.governor = gov;
                 state.path = path;
-                new_old_global_state.push(state);
+                cpus_state.push(state);
             }
 
             cpu::set_gov_all(cpu::PERF_GOV)?;
-            self.old_sys_state = Some(new_old_global_state);
+            self.system_state = Some(SystemState { cpus_state })
         }
         Ok(())
     }
-    fn reset_cpu(&mut self) -> anyhow::Result<()> {
+
+    fn reset_system(&mut self) -> anyhow::Result<()> {
         if self.settings.cpu_governor.enabled {
-            if let Some(old_state) = self.old_sys_state.as_ref() {
-                for state in old_state {
-                    cpu::set_gov(&state.path, &state.governor)?;
+            if let Some(state) = self.system_state.as_ref() {
+                for cur in &state.cpus_state {
+                    // If 1 fails, try to reset all other policies
+                    if let Err(why) = cpu::set_gov(&cur.path, &cur.governor) {
+                        tracing::error!(
+                            "Setting gov for {} failed: {}",
+                            cur.path.to_string_lossy(),
+                            why
+                        );
+                    }
                 }
             }
         }
         Ok(())
     }
-
-    fn add_process(&mut self, pid: nix::unistd::Pid) -> anyhow::Result<()> {
-        let mut pstate = ProcessState::default();
-
-        if self.settings.niceness.enabled {
-            let old_niceness: i32 = scheduler::process_niceness(pid)?;
-            pstate.niceness = Some(old_niceness);
-        }
-        if self.settings.ioniceness.enabled {
-            let old_ioniceness: i32 = io::process_io_niceness(pid)?;
-            pstate.ioniceness = Some(old_ioniceness);
-        }
-        if self.settings.cpu_affinity.enabled {
-            pstate.aff_mask = Some(cpu::get_aff_mask(pid)?);
-        }
-
-        match optimize_process(pid, &self.settings) {
-            Ok(_) => {
-                self.processes.insert(pid, pstate);
-                return Ok(());
-            }
-            Err(why) => {
-                tracing::error!("Failed to optimize process");
-                return Err(why);
-            }
-        }
-    }
-
     fn reset_processes(&mut self) -> anyhow::Result<()> {
         for (process, state) in self.processes.drain() {
             reset_process(process, state, &self.settings)?;
@@ -126,11 +109,13 @@ impl Optimizer {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         tracing::info!("Resetting all optimizations");
-        if self.is_optimized {
-            self.is_optimized = false;
-            self.reset_processes()?;
-            self.reset_cpu()?;
+        if let Err(why) = self.reset_processes() {
+            tracing::error!("Reset processes failure: {}", why);
         }
+        if let Err(why) = self.reset_system() {
+            tracing::error!("Reset system failure: {}", why);
+        }
+        self.system_state = None;
         Ok(())
     }
 
@@ -150,6 +135,39 @@ impl Optimizer {
         has_removed
     }
 
+    fn add_process(&mut self, pid: nix::unistd::Pid) -> anyhow::Result<()> {
+        let mut pstate = ProcessState::default();
+
+        if self.settings.niceness.enabled {
+            match scheduler::process_niceness(pid) {
+                Ok(nc) => pstate.niceness = Some(nc),
+                Err(why) => {
+                    tracing::warn!("Getting process niceness failure: {}", why);
+                }
+            }
+        }
+        if self.settings.ioniceness.enabled {
+            match io::process_io_niceness(pid) {
+                Ok(nc) => pstate.ioniceness = Some(nc),
+                Err(why) => {
+                    tracing::warn!("Getting process ioniceness failure: {}", why);
+                }
+            }
+        }
+        if self.settings.cpu_affinity.enabled {
+            match cpu::get_aff_mask(pid) {
+                Ok(mask) => pstate.aff_mask = Some(mask),
+                Err(why) => {
+                    tracing::warn!("Getting affinity mask failure: {}", why);
+                }
+            }
+        }
+
+        optimize_process(pid, &self.settings);
+        self.processes.insert(pid, pstate);
+        Ok(())
+    }
+
     pub async fn process(
         &mut self,
         rx: &mut UnboundedReceiver<utils::Commands>,
@@ -157,13 +175,9 @@ impl Optimizer {
         if let Ok(command) = rx.try_recv() {
             match command {
                 utils::Commands::OptimizeProcess(pid) => {
-                    if !self.is_optimized {
-                        if let Err(why) = self.optimize_cpu() {
-                            return Err(anyhow::anyhow!("Error optimizing CPU: {}", why));
-                        }
-                        self.is_optimized = true;
+                    if self.system_state.is_none() {
+                        self.optimize()?;
                     }
-
                     self.add_process(pid)?;
                 }
                 utils::Commands::ResetProcess(pid) => {
@@ -171,15 +185,19 @@ impl Optimizer {
                         reset_process(pid, state, &self.settings)?;
                     }
                 }
-                utils::Commands::ResetAll => self.reset()?,
+                utils::Commands::ResetAll => {
+                    self.reset()?;
+                }
             }
         }
 
-        let _ = self.clear_dead_pids();
-        if self.is_optimized && self.processes.is_empty() {
-            self.reset()?;
+        self.clear_dead_pids();
+        if let Some(_) = self.system_state.as_ref() {
+            if self.processes.is_empty() {
+                // No processes to track, so reset the system state
+                self.reset()?;
+            }
         }
-
         Ok(())
     }
 
@@ -197,6 +215,7 @@ impl Drop for Optimizer {
     }
 }
 
+// Try to reset everything, if fails, go on, set process state to a regular one as possible
 fn reset_process(
     pid: nix::unistd::Pid,
     state: ProcessState,
@@ -225,54 +244,83 @@ fn reset_process(
     }
 
     if settings.cpu_affinity.enabled {
-        let tasks = &utils::get_process_tasks(pid)?; // 0 task is the process itself (main thread)
-        for task in tasks {
-            if let Err(why) = cpu::set_aff_mask(
-                nix::unistd::Pid::from_raw(*task as i32),
-                state.aff_mask.unwrap_or_else(|| get_aff_default().unwrap()),
-            ) {
-                tracing::error!("Could not reset process affinity mask: {}", why);
+        match utils::get_process_tasks(pid) {
+            Ok(tasks) => {
+                let tasks = &tasks[1..]; // 0 task is the main thread, which we already pin
+                for task in tasks {
+                    let aff_mask = state.aff_mask.unwrap_or_else(|| get_aff_default().unwrap());
+                    if let Err(why) =
+                        cpu::set_aff_mask(nix::unistd::Pid::from_raw(*task as i32), aff_mask)
+                    {
+                        tracing::error!("Could not reset process affinity mask: {}", why);
+                    }
+                }
+            }
+            Err(why) => {
+                tracing::error!("Fetching process's tasks failure: {}", why);
             }
         }
     }
     Ok(())
 }
 
-fn optimize_process(pid: nix::unistd::Pid, settings: &cfg::Settings) -> anyhow::Result<()> {
+// Try to optimize everything, if it fails go on, in the end the old state will be a default state for a process and its tasks
+fn optimize_process(pid: nix::unistd::Pid, settings: &cfg::Settings) {
     tracing::info!("Optimizing process: {}", pid.as_raw());
 
-    // nicenessness
-    // We can kinda ignore an error, maybe if it fails this it doesnt fail to do any other optimizations
     if settings.niceness.enabled {
-        scheduler::set_process_niceness(pid, settings.niceness.optimized_value)?;
+        if let Err(why) = scheduler::set_process_niceness(pid, settings.niceness.optimized_value) {
+            tracing::error!("update process niceness failure: {}", why);
+        }
     }
     if settings.ioniceness.enabled {
-        io::set_process_io_niceness(pid, settings.ioniceness.optimized_value)?;
+        if let Err(why) = io::set_process_io_niceness(pid, settings.ioniceness.optimized_value) {
+            tracing::error!("update process ioniceness failure: {}", why);
+        }
     }
 
-    // CPU Affinity
-    // Find the lowest loaded cpu
     if settings.cpu_affinity.enabled {
-        let mut cpu_loads = cpu::cpus_load()?;
+        match cpu::cpus_load() {
+            Ok(mut cpus_load) => {
+                cpus_load.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                let mut cpu_idx = None;
+                for (idx, _) in cpus_load.iter() {
+                    match cpu::cpu_core_id(*idx) {
+                        Ok(idx) => cpu_idx = Some(idx),
+                        Err(why) => {
+                            tracing::warn!("Checking logical core's hardware core failure: {}", why)
+                        }
+                    }
+                }
+                if cpu_idx == None {
+                    tracing::error!("CPU Pinning failed for unknown reason");
+                }
 
-        cpu_loads.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let mut cpu_idx = 0;
-        for (idx, _) in cpu_loads.iter() {
-            // Note: shouldn't pin to core 0 since it is heavily used by the kernel for OS stuff
-            if cpu::cpu_core_id(*idx)? > 0 {
-                cpu_idx = *idx;
-                break;
+                if let Err(why) = cpu::pin_process(pid, cpu_idx.unwrap()) {
+                    tracing::error!("Failed to pin {}: {}", pid.as_raw(), why);
+                }
+                match utils::get_process_tasks(pid) {
+                    Ok(tasks) => {
+                        let tasks = &tasks[1..]; // 0 task is the main thread, which we already pin
+                        for task in tasks {
+                            if let Err(why) = cpu::pin_process_excluding(
+                                nix::unistd::Pid::from_raw(*task as i32),
+                                cpu_idx.unwrap(),
+                            ) {
+                                tracing::error!("Pinning task {} failure: {}", task, why)
+                            }
+                        }
+                    }
+                    Err(why) => {
+                        tracing::error!("Fetching process's tasks failure: {}", why);
+                    }
+                }
+            }
+            Err(why) => {
+                tracing::error!("CPUs load measurement failed: {}", why);
             }
         }
-
-        cpu::pin_process(pid, cpu_idx)?;
-        let tasks = &utils::get_process_tasks(pid)?[1..]; // 0 task is the process itself (main thread)
-        for task in tasks {
-            cpu::pin_process_excluding(nix::unistd::Pid::from_raw(*task as i32), cpu_idx)?;
-        }
     }
-
-    Ok(())
 }
 
 fn get_aff_default() -> anyhow::Result<libc::cpu_set_t> {

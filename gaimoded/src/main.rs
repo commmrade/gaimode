@@ -20,6 +20,9 @@ struct Args {
     forked: bool,
 }
 
+// Tasks:
+// 2. Maybe split optimizer and make it an orchestrator, adapter, but not a god object or typa shit
+
 #[tokio::main]
 async fn main() {
     let mut sigterm_signal = tokio::signal::unix::signal(SignalKind::terminate())
