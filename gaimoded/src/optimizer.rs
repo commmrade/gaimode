@@ -343,6 +343,14 @@ impl Optimizer {
     }
 }
 
+impl Drop for Optimizer {
+    fn drop(&mut self) {
+        if let Err(why) = self.unoptimize() {
+            tracing::error!("Unoptimization failed: {}", why);
+        }
+    }
+}
+
 // struct CpuState {
 //     path: PathBuf,
 //     governor: String,
