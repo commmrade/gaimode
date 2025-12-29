@@ -2,32 +2,32 @@ use serde::Deserialize;
 
 use crate::{cpu, io, scheduler};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct CpuAffinity {
     pub enabled: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct CpuGovernor {
     pub enabled: bool,
     pub optimized_type: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Niceness {
     pub enabled: bool,
     pub optimized_value: i32,
     pub default_value: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct IoNiceness {
     pub enabled: bool,
     pub optimized_value: i32,
     pub default_value: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Settings {
     pub cpu_affinity: CpuAffinity,
     pub cpu_governor: CpuGovernor,

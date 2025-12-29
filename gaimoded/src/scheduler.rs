@@ -32,7 +32,23 @@ pub fn set_process_niceness(pid: nix::unistd::Pid, niceness: i32) -> anyhow::Res
 
             let ret = libc::setpriority(libc::PRIO_PROCESS, task_tid, niceness);
             if ret < 0 {
-                return Err(anyhow::anyhow!("Could not setpriority"));
+                match *libc::__errno_location() {
+                    libc::ESRCH => {
+                        return Err(anyhow::anyhow!("process could not be located"));
+                    }
+                    libc::EINVAL => {
+                        return Err(anyhow::anyhow!("value is not recognized"));
+                    }
+                    libc::EPERM => {
+                        return Err(anyhow::anyhow!("insufficient permissions"));
+                    }
+                    libc::EACCES => {
+                        return Err(anyhow::anyhow!("insufficient priviliges"));
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!("unknown error"));
+                    }
+                }
             }
         }
         Ok(())

@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use crate::cpu;
+
 pub const SCALING_AV_GOV_POLICY_PATH_BLOB: &'static str =
     "/sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors";
 pub const SCALING_GOV_POLICY_PATH_GLOB: &'static str =
@@ -25,30 +27,29 @@ pub fn is_gov_available(gov: &str) -> anyhow::Result<bool> {
 }
 
 pub fn set_gov_all(gov: &str) -> anyhow::Result<()> {
-    // Since one policy can be used by several cores, it's faster to iterate policies
-    let glob = glob::glob(SCALING_GOV_POLICY_PATH_GLOB)?;
-    // If changing 1 governor fails, don't give up, continue
-    // We captured all state already, we can reset it later
-    for entry in glob {
+    let pattern = SCALING_GOV_POLICY_PATH_GLOB;
+    let entries = glob::glob(pattern)?;
+
+    let mut failed = false;
+    for entry in entries {
         match entry {
-            Ok(entry) => match std::fs::OpenOptions::new().write(true).open(&entry) {
-                Ok(mut file) => {
-                    if let Err(why) = file.write(gov.as_bytes()) {
-                        tracing::error!(
-                            "Setting gov for {} failed: {}",
-                            entry.to_string_lossy(),
-                            why
-                        );
-                    }
+            Ok(entry) => {
+                if let Err(why) = set_gov(&entry, gov) {
+                    tracing::error!(
+                        "Failed to change {} governor: {}",
+                        entry.to_string_lossy(),
+                        why
+                    );
+                    failed = true;
                 }
-                Err(why) => {
-                    tracing::error!("Opening policy file failed: {}", why);
-                }
-            },
+            }
             Err(why) => {
-                tracing::error!("glob unreadable: {}", why);
+                tracing::error!("Path is not readable: {}", why);
             }
         }
+    }
+    if failed {
+        return Err(anyhow::anyhow!("failed to update one of the governors"));
     }
     Ok(())
 }
@@ -207,7 +208,7 @@ pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu_exclude: usize) -> anyho
             &set as *const _,
         );
         if ret < 0 {
-            return Err(anyhow::anyhow!("Could not change process affinity"));
+            return Err(anyhow::anyhow!("err pinning"));
         }
     }
     Ok(())
