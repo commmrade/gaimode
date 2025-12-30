@@ -74,6 +74,7 @@ impl OptimizerObject for SystemOptimizer {
                     failed = true;
                 }
             }
+            self.state.cpus_state.clear();
         }
         if failed {
             return Err(anyhow::anyhow!("One or more cpu govs could not be reset"));
@@ -131,6 +132,7 @@ impl OptimizerObject for ProcessOptimizer {
                     for (idx, _) in cpus_load.iter() {
                         if let Ok(core_id) = cpu::cpu_core_id(*idx) {
                             if core_id > 0 {
+                                // core 0 is used by OS a lot
                                 cpu_idx = Some(idx);
                             }
                         }
@@ -340,19 +342,22 @@ impl Optimizer {
         if let Ok(command) = rx.try_recv() {
             match command {
                 utils::Commands::OptimizeProcess(pid) => {
-                    let empty = self.processes.is_empty();
-                    if empty {
-                        self.sys.optimize()?;
-                    }
-
-                    let mut process = ProcessOptimizer::from_process(pid, self.settings.clone())?;
-                    if let Err(why) = process.optimize() {
+                    if !self.processes.contains_key(&pid) {
+                        let empty = self.processes.is_empty();
                         if empty {
-                            self.sys.unoptimize()?;
+                            self.sys.optimize()?;
                         }
-                        return Err(why.into());
+
+                        let mut process =
+                            ProcessOptimizer::from_process(pid, self.settings.clone())?;
+                        if let Err(why) = process.optimize() {
+                            if empty {
+                                self.sys.unoptimize()?;
+                            }
+                            return Err(why.into());
+                        }
+                        self.processes.insert(pid, process);
                     }
-                    self.processes.insert(pid, process);
                 }
                 utils::Commands::ResetProcess(pid) => {
                     if let Some(mut process) = self.processes.remove(&pid) {
