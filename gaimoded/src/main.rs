@@ -26,6 +26,7 @@ struct Args {
 #[tokio::main]
 async fn main() {
     todo!("- Testing");
+    todo!("- better error messages in helper fncs");
 
     let mut sigterm_signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("Wasn't able to set up SIGTERM handler"); // systemctl stop service sends this
