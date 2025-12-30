@@ -281,20 +281,23 @@ impl OptimizerObject for Optimizer {
     fn unoptimize(&mut self) -> anyhow::Result<()> {
         let mut failed = false;
 
-        if let Err(why) = self.sys.unoptimize() {
-            tracing::error!("Could not unoptimize system state: {}", why);
-            failed = true;
-        }
-
         for (_, mut process) in self.processes.drain() {
             if let Err(why) = process.unoptimize() {
                 tracing::error!("Process unoptimization failed: {}", why);
                 failed = true;
             }
         }
+
+        if let Err(why) = self.sys.unoptimize() {
+            tracing::error!("Could not unoptimize system state: {}", why);
+            failed = true;
+        }
+
         if failed {
             return Err(anyhow::anyhow!("Failed to unoptimize fully"));
         }
+
+        self.is_active = false;
         Ok(())
     }
 }
@@ -309,6 +312,15 @@ impl Optimizer {
         }
     }
 
+    fn clear_dead_processes(&mut self) {
+        self.processes
+            .retain(|pid, _| match nix::sys::signal::kill(*pid, None) {
+                Ok(_) => true,
+                Err(nix::errno::Errno::EPERM) => true,
+                Err(_) => false,
+            });
+    }
+
     pub async fn process(
         &mut self,
         rx: &mut UnboundedReceiver<utils::Commands>,
@@ -316,27 +328,36 @@ impl Optimizer {
         if let Ok(command) = rx.try_recv() {
             match command {
                 utils::Commands::OptimizeProcess(pid) => {
-                    if !self.is_active {
-                        // If fails, it logs an error and prevents
-                        self.optimize()?;
+                    let empty = self.processes.is_empty();
+                    if empty {
+                        self.sys.optimize()?;
                     }
 
-                    // Only add a new process if state is changed
-                    if self.is_active {
-                        let mut process =
-                            ProcessOptimizer::from_process(pid, self.settings.clone())?;
-                        process.optimize()?;
-                        self.processes.insert(pid, process);
+                    let mut process = ProcessOptimizer::from_process(pid, self.settings.clone())?;
+                    if let Err(why) = process.optimize() {
+                        if empty {
+                            self.sys.unoptimize()?;
+                        }
+                        return Err(why.into());
+                    }
+                    self.processes.insert(pid, process);
+                }
+                utils::Commands::ResetProcess(pid) => {
+                    if let Some(mut process) = self.processes.remove(&pid) {
+                        process.unoptimize()?;
                     }
                 }
-                utils::Commands::ResetProcess(pid) => {}
                 utils::Commands::ResetAll => {
                     self.unoptimize()?;
                 }
             }
 
-            todo!("CLear dead processes");
-            todo!("Check if should reset optimizations (when no processes)")
+            if self.is_active {
+                self.clear_dead_processes();
+                if self.processes.is_empty() {
+                    self.unoptimize()?;
+                }
+            }
         }
 
         Ok(())
