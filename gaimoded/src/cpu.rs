@@ -4,8 +4,6 @@ use std::{
     time::Duration,
 };
 
-use crate::cpu;
-
 pub const SCALING_AV_GOV_POLICY_PATH_BLOB: &'static str =
     "/sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors";
 pub const SCALING_GOV_POLICY_PATH_GLOB: &'static str =
@@ -75,11 +73,8 @@ pub fn get_govs() -> anyhow::Result<Vec<(PathBuf, String)>> {
 // Number of hardware threads
 pub fn cpus_num() -> anyhow::Result<i64> {
     unsafe {
-        let ret = libc::sysconf(libc::_SC_NPROCESSORS_CONF);
-        if ret < 0 {
-            return Err(anyhow::anyhow!("Could not fetch number of CPUS online"));
-        }
-        Ok(ret)
+        let cpus = libc::sysconf(libc::_SC_NPROCESSORS_ONLN); // Always returns a valid number of CPUs
+        Ok(cpus)
     }
 }
 
@@ -155,7 +150,17 @@ pub fn get_aff_mask(pid: nix::unistd::Pid) -> anyhow::Result<libc::cpu_set_t> {
             &mut set as *mut _,
         );
         if ret < 0 {
-            return Err(anyhow::anyhow!("Could not get process affinity"));
+            match *libc::__errno_location() {
+                libc::EINVAL => {
+                    return Err(anyhow::anyhow!(
+                        "cpusetsize is smaller than the size of the affinity mask used by the kernel."
+                    ));
+                }
+                libc::ESRCH => {
+                    return Err(anyhow::anyhow!("PID not found"));
+                }
+                _ => return Err(anyhow::anyhow!("Unknown error")),
+            }
         }
         Ok(set)
     }
@@ -169,7 +174,20 @@ pub fn set_aff_mask(pid: nix::unistd::Pid, mask: libc::cpu_set_t) -> anyhow::Res
             &mask as *const _,
         );
         if ret < 0 {
-            return Err(anyhow::anyhow!("Could not change process affinity"));
+            match *libc::__errno_location() {
+                libc::EINVAL => {
+                    return Err(anyhow::anyhow!(
+                        "it mask mask contains no processors that are currently physically on the system and permitted to the thread according to any restrictions"
+                    ));
+                }
+                libc::EPERM => {
+                    return Err(anyhow::anyhow!("no approriate privileges"));
+                }
+                libc::ESRCH => {
+                    return Err(anyhow::anyhow!("PID not found"));
+                }
+                _ => return Err(anyhow::anyhow!("Unknown error")),
+            }
         }
         Ok(())
     }
@@ -179,14 +197,8 @@ pub fn pin_process(pid: nix::unistd::Pid, cpu: usize) -> anyhow::Result<()> {
     unsafe {
         let mut set: libc::cpu_set_t = std::mem::zeroed();
         libc::CPU_SET(cpu, &mut set);
-        let ret = libc::sched_setaffinity(
-            pid.as_raw(),
-            std::mem::size_of::<libc::cpu_set_t>(),
-            &set as *const _,
-        );
-        if ret < 0 {
-            return Err(anyhow::anyhow!("Could not change process affinity"));
-        }
+
+        set_aff_mask(pid, set)?;
         Ok(())
     }
 }
@@ -201,15 +213,7 @@ pub fn pin_process_excluding(pid: nix::unistd::Pid, cpu_exclude: usize) -> anyho
         }
         libc::CPU_CLR(cpu_exclude, &mut set);
 
-        // libc::CPU_SET(cpu, &mut set);
-        let ret = libc::sched_setaffinity(
-            pid.as_raw(),
-            std::mem::size_of::<libc::cpu_set_t>(),
-            &set as *const _,
-        );
-        if ret < 0 {
-            return Err(anyhow::anyhow!("err pinning"));
-        }
+        set_aff_mask(pid, set)?;
     }
     Ok(())
 }

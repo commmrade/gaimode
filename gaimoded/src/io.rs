@@ -17,10 +17,22 @@ fn ioprio_value(prioclass: i32, priolevel: i32) -> u16 {
 
 pub fn process_io_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
     unsafe {
-        *libc::__errno_location() = 0;
         let ret = libc::syscall(libc::SYS_ioprio_get, IOPRIO_WHO_PROCESS, pid.as_raw());
-        if ret == -1 && *libc::__errno_location() != 0 {
-            return Err(anyhow::anyhow!("Failed to get process IO niceness"));
+        if ret < 0 {
+            match *libc::__errno_location() {
+                libc::EINVAL => {
+                    return Err(anyhow::anyhow!("Invalid  value  for which or ioprio."));
+                }
+                libc::EPERM => return Err(anyhow::anyhow!("not enough privileges")),
+                libc::ESRCH => {
+                    return Err(anyhow::anyhow!(
+                        "No process(es) could be found that matched the specification in which and who"
+                    ));
+                }
+                _ => {
+                    return Err(anyhow::anyhow!("Failed to get process IO niceness"));
+                }
+            }
         }
 
         Ok(ioprio_prio_data(ret as i32))
@@ -45,6 +57,20 @@ pub fn set_process_io_niceness(pid: nix::unistd::Pid, ioniceness: i32) -> anyhow
             if ret < 0 {
                 // Should not fail if failed to change single process' niceness
                 tracing::error!("Failed to change TID I/O Niceness");
+                match *libc::__errno_location() {
+                    libc::EINVAL => {
+                        return Err(anyhow::anyhow!("Invalid  value  for which or ioprio."));
+                    }
+                    libc::EPERM => return Err(anyhow::anyhow!("not enough privileges")),
+                    libc::ESRCH => {
+                        return Err(anyhow::anyhow!(
+                            "No process(es) could be found that matched the specification in which and who"
+                        ));
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!("Failed to get process IO niceness"));
+                    }
+                }
             }
         }
 

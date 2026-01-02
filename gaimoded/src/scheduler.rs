@@ -12,9 +12,14 @@ pub fn process_niceness(pid: nix::unistd::Pid) -> anyhow::Result<i32> {
         *libc::__errno_location() = 0;
         let ret = libc::getpriority(libc::PRIO_PROCESS, pid.as_raw() as u32);
 
-        // If returned -1 and errno is. Not sure if it's thread safe, but no other thread seem to be messing with errno
         if ret == -1 && *libc::__errno_location() != 0 {
-            return Err(anyhow::anyhow!("Could not get process niceness"));
+            match *libc::__errno_location() {
+                libc::ESRCH => return Err(anyhow::anyhow!("no process could be located")),
+                libc::EINVAL => return Err(anyhow::anyhow!("Value was not recognized")),
+                _ => {
+                    return Err(anyhow::anyhow!("Could not get process niceness"));
+                }
+            }
         }
         Ok(ret)
     }
