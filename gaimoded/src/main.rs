@@ -25,7 +25,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    todo!("- Testing");
+    // todo!("- Testing");
 
     // test 1 (no perf): 958, fps: 22.9
     // test 2 (no perf): 962, fps: 23.0

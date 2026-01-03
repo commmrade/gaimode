@@ -7,10 +7,6 @@ use crate::{
     utils::{self},
 };
 
-/*
-* https://grok.com/share/bGVnYWN5_1ed88943-3d18-49fb-8123-76e63e7124b7 - list of improvements i can do
-*/
-
 #[allow(dead_code)]
 struct ProcessState {
     niceness: Option<i32>,
@@ -62,6 +58,7 @@ impl OptimizerObject for SystemOptimizer {
             }
 
             cpu::set_gov_all(cpu::PERF_GOV)?;
+            tracing::info!("Optimized CPU policies");
         }
         Ok(())
     }
@@ -109,6 +106,7 @@ impl OptimizerObject for ProcessOptimizer {
                 tracing::error!("nicencess change failed: {}", why);
                 return Err(why.into());
             }
+            tracing::info!("Updated process {} niceness", self.pid.as_raw());
         }
         if self.settings.ioniceness.enabled {
             if let Err(why) =
@@ -121,6 +119,7 @@ impl OptimizerObject for ProcessOptimizer {
                 }
                 return Err(why.into());
             }
+            tracing::info!("Updated process {} ioniceness", self.pid.as_raw());
         }
 
         if self.settings.cpu_affinity.enabled {
@@ -183,6 +182,10 @@ impl OptimizerObject for ProcessOptimizer {
                     return Err(why.into());
                 }
             }
+            tracing::info!(
+                "Updated process {} and its tasks CPU affinity mask",
+                self.pid.as_raw()
+            );
         }
 
         Ok(())

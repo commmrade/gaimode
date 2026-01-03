@@ -2,32 +2,32 @@ use serde::Deserialize;
 
 use crate::{cpu, io, scheduler};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct CpuAffinity {
     pub enabled: bool,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct CpuGovernor {
     pub enabled: bool,
     pub optimized_type: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Niceness {
     pub enabled: bool,
     pub optimized_value: i32,
     pub default_value: i32,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct IoNiceness {
     pub enabled: bool,
     pub optimized_value: i32,
     pub default_value: i32,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
     pub cpu_affinity: CpuAffinity,
     pub cpu_governor: CpuGovernor,
@@ -70,7 +70,7 @@ impl Settings {
 
 pub fn get_cfg() -> anyhow::Result<Settings> {
     let mut config_path = std::env::home_dir().ok_or(anyhow::anyhow!("No home dir set"))?;
-    config_path.push(".config/gaimode/settings.toml");
+    config_path.push("/etc/gaimode/settings.toml");
 
     Ok(Settings::from_file(&config_path.to_str().ok_or(
         anyhow::anyhow!("Could not convert path to str"),
